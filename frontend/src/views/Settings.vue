@@ -5,12 +5,14 @@
     <el-row :gutter="16">
       <el-col :span="12">
         <el-card shadow="hover">
-          <template #header><h3>Cookie 配置</h3></template>
-          <p style="color:#999;font-size:13px;margin-bottom:12px;">从浏览器 DevTools → Network → 任意 BOSS 请求 → 复制 Cookie 请求头</p>
-          <el-alert v-if="cookieConfigured" title="已配置" type="success" :closable="false" style="margin-bottom:12px;" />
-          <el-alert v-else title="未配置" type="error" :closable="false" style="margin-bottom:12px;" />
-          <el-input v-model="cookieText" type="textarea" :rows="6" placeholder="粘贴 Cookie..." />
-          <el-button type="primary" @click="saveCookie" :disabled="!cookieText.trim()" style="margin-top:12px;">保存 Cookie</el-button>
+          <template #header><h3>登录管理</h3></template>
+          <p style="color:#999;font-size:13px;margin-bottom:12px;">在浏览器中登录 BOSS 直聘，登录后 Cookie 自动保存。</p>
+          <el-alert v-if="cookieVerifyMsg" :title="cookieVerifyMsg" :type="cookieValid ? 'success' : 'error'" :closable="false" style="margin-bottom:12px;" />
+          <p style="color:#999;font-size:13px;margin-bottom:8px;">方式一：点击按钮扫码登录。方式二：用 EditThisCookie 插件导出 JSON，粘贴到下方。</p>
+          <el-button type="primary" @click="doLogin" :loading="loggingIn">打开登录页面</el-button>
+          <el-button @click="doVerify" :loading="verifying" style="margin-left:8px;">验证登录状态</el-button>
+          <el-input v-model="cookieJson" type="textarea" :rows="4" placeholder="粘贴 EditThisCookie 导出的 JSON..." style="margin-top:12px;font-family:monospace;font-size:12px;" />
+          <el-button :disabled="!cookieJson.trim()" @click="doImportCookies" style="margin-top:8px;">导入 Cookies</el-button>
         </el-card>
       </el-col>
 
@@ -62,9 +64,11 @@
 import { ref, onMounted } from 'vue'
 import { api } from '../api'
 
-const cookieText = ref('')
-const cookieConfigured = ref(false)
-const cookiePreview = ref('')
+const cookieValid = ref(false)
+const cookieVerifyMsg = ref('')
+const verifying = ref(false)
+const loggingIn = ref(false)
+const cookieJson = ref('')
 const syncing = ref(false)
 const progressMsg = ref('')
 const progressDetail = ref('')
@@ -74,25 +78,60 @@ const syncDays = ref(0)
 
 onMounted(async () => {
   try {
-    const s = await api.cookieStatus()
-    cookieConfigured.value = s.configured
-    cookiePreview.value = s.cookie_preview || ''
     const cfg = await api.getConfig()
     syncDays.value = cfg.sync_days || 0
   } catch (e) { /* ignore */ }
 })
 
-async function saveCookie() {
-  await api.saveCookie(cookieText.value)
-  cookieText.value = ''
-  const s = await api.cookieStatus()
-  cookieConfigured.value = s.configured
-  cookiePreview.value = s.cookie_preview || ''
-  ElMessage.success('Cookie 已保存')
+async function doLogin() {
+  loggingIn.value = true
+  try {
+    const r = await api.loginAndCapture()
+    if (r.success) {
+      cookieValid.value = true
+      cookieVerifyMsg.value = '✅ 登录成功，Cookie 已自动保存'
+    } else {
+      cookieVerifyMsg.value = '❌ ' + r.message
+    }
+  } catch (e) {
+    cookieVerifyMsg.value = '❌ ' + e.message
+  } finally {
+    loggingIn.value = false
+  }
+}
+
+async function doImportCookies() {
+  try {
+    const r = await api.importCookies(cookieJson.value)
+    if (r.ok) {
+      cookieValid.value = true
+      cookieVerifyMsg.value = `✅ 已导入 ${r.count} 个 Cookie`
+      cookieJson.value = ''
+    } else {
+      cookieVerifyMsg.value = '❌ 导入失败'
+    }
+  } catch (e) {
+    cookieVerifyMsg.value = '❌ 格式错误: ' + e.message
+  }
 }
 
 async function saveConfig() {
   await api.updateConfig({ sync_days: syncDays.value || 0 })
+}
+
+async function doVerify() {
+  verifying.value = true
+  cookieVerifyMsg.value = ''
+  try {
+    const r = await api.checkMessengerLogin()
+    cookieValid.value = r.valid
+    cookieVerifyMsg.value = r.valid ? `✅ ${r.message}` : `❌ ${r.message}`
+  } catch (e) {
+    cookieValid.value = false
+    cookieVerifyMsg.value = '❌ 验证失败: ' + e.message
+  } finally {
+    verifying.value = false
+  }
 }
 
 async function doSync() {

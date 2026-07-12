@@ -56,6 +56,41 @@ def get_config():
     return {"sync_days": int(row["value"]) if row else 0}
 
 
+@router.get("/cookie/verify")
+def verify_cookie():
+    """发一个真实请求验证 Cookie 是否有效"""
+    import httpx
+    conn = get_db()
+    row = conn.execute("SELECT value FROM config WHERE key='cookie'").fetchone()
+    conn.close()
+    if not row or not row["value"]:
+        return {"valid": False, "message": "未配置 Cookie"}
+
+    cookie = row["value"]
+    try:
+        resp = httpx.get(
+            "https://www.zhipin.com/wapi/zprelation/friend/geekFilterByLabel",
+            params={"labelId": 0, "name": "全部", "encryptSystemId": "8cee15b718bda27e0Hx6"},
+            headers={
+                "Cookie": cookie,
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                "Referer": "https://www.zhipin.com/web/chat/",
+            },
+            timeout=10,
+            follow_redirects=False,
+        )
+        if resp.status_code == 302:
+            return {"valid": False, "message": "Cookie 已失效（被重定向到登录页）"}
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("code") == 0:
+                return {"valid": True, "message": "Cookie 有效"}
+            return {"valid": False, "message": f"API 返回异常: code={data.get('code')}, message={data.get('message')}"}
+        return {"valid": False, "message": f"HTTP {resp.status_code}"}
+    except Exception as e:
+        return {"valid": False, "message": str(e)}
+
+
 @router.put("/config")
 def update_config(body: ConfigBody):
     conn = get_db()

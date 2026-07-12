@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from .database import init_db
-from .routers import cookie, sync, bosses, stats
+from .routers import cookie, sync, bosses, stats, messenger
 
 AVATAR_DIR = os.path.join(Path(__file__).parent.parent, "avatar")
 
@@ -30,6 +30,7 @@ app.include_router(cookie.router, prefix="/api", tags=["Cookie"])
 app.include_router(sync.router, prefix="/api", tags=["Sync"])
 app.include_router(bosses.router, prefix="/api", tags=["Bosses"])
 app.include_router(stats.router, prefix="/api", tags=["Stats"])
+app.include_router(messenger.router, prefix="/api", tags=["Messenger"])
 
 
 @app.on_event("startup")

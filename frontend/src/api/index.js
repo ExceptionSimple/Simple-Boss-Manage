@@ -18,6 +18,7 @@ export const api = {
   // Cookie
   saveCookie: (cookie) => request('/cookie', { method: 'PUT', body: JSON.stringify({ cookie }) }),
   cookieStatus: () => request('/cookie/status'),
+  verifyCookie: () => request('/cookie/verify'),
 
   // Sync
   triggerSync: () => request('/sync', { method: 'POST' }),
@@ -33,6 +34,11 @@ export const api = {
     return request(`/bosses/${encodeURIComponent(id)}/messages${q ? '?' + q : ''}`)
   },
   updateBoss: (id, data) => request(`/bosses/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  loginAndCapture: () => request('/messenger/login', { method: 'POST' }),
+  checkMessengerLogin: () => request('/messenger/check-login'),
+  importCookies: (jsonStr) => request('/messenger/import-cookies', { method: 'POST', body: JSON.stringify({ data: jsonStr }) }),
+  sendMessage: (data) => request('/messenger/send', { method: 'POST', body: JSON.stringify(data) }),
+  sendBatchMessage: (data) => request('/messenger/send-batch', { method: 'POST', body: JSON.stringify(data) }),
   deleteAllBosses: () => request('/bosses', { method: 'DELETE' }),
 
   // Stats

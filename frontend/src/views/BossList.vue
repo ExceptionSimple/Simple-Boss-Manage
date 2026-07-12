@@ -32,8 +32,26 @@
       </el-col>
     </el-row>
 
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;">
+      <el-button type="primary" :disabled="selectedNames.length === 0" @click="showBatchDialog = true">
+        批量发消息 ({{ selectedNames.length }})
+      </el-button>
+      <span v-if="selectedNames.length" style="font-size:13px;color:#999;">已选：{{ selectedNames.join(', ') }}</span>
+    </div>
+
+    <el-dialog v-model="showBatchDialog" title="批量发送消息" width="500px">
+      <p style="margin-bottom:12px;color:#666;">将发送给 {{ selectedNames.length }} 人</p>
+      <el-input v-model="batchMsg" type="textarea" :rows="5" placeholder="输入要发送的消息..." />
+      <template #footer>
+        <el-button @click="showBatchDialog = false">取消</el-button>
+        <el-button type="primary" @click="doBatchSend" :loading="batchSending" :disabled="!batchMsg.trim()">发送</el-button>
+      </template>
+    </el-dialog>
+
     <el-table :data="bosses" v-loading="loading" stripe border style="width:100%"
-      @sort-change="handleSortChange" :default-sort="{ prop: 'last_msg_time', order: 'descending' }">
+      @sort-change="handleSortChange" :default-sort="{ prop: 'last_msg_time', order: 'descending' }"
+      @selection-change="onSelectionChange" ref="tableRef">
+      <el-table-column type="selection" width="40" />
       <el-table-column label="BOSS" min-width="140">
         <template #default="{ row }">
           <div style="display:flex;align-items:center;gap:8px;">
@@ -90,7 +108,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { api } from '../api'
 
 const bosses = ref([])
@@ -98,6 +117,12 @@ const loading = ref(false)
 const page = ref(1)
 const size = ref(20)
 const total = ref(0)
+const tableRef = ref(null)
+const selectedBosses = ref([])
+const selectedNames = computed(() => selectedBosses.value.map(b => b.name))
+const showBatchDialog = ref(false)
+const batchMsg = ref('')
+const batchSending = ref(false)
 const filters = reactive({
   keyword: '', city: '', position: '',
   has_interview: null, is_resume_sent: null, has_written_test: null,
@@ -135,6 +160,29 @@ function handleSortChange({ prop, order }) {
     filters.order = 'desc'
   }
   fetchData()
+}
+
+function onSelectionChange(val) { selectedBosses.value = val }
+
+async function doBatchSend() {
+  if (!batchMsg.value.trim() || selectedNames.value.length === 0) return
+  batchSending.value = true
+  try {
+    const r = await api.sendBatchMessage({
+      boss_names: selectedNames.value,
+      message: batchMsg.value,
+    })
+    const ok = r.results?.filter(x => x.success).length || 0
+    const fail = r.results?.filter(x => !x.success).length || 0
+    ElMessage.success(`发送完成：${ok} 成功, ${fail} 失败`)
+    showBatchDialog.value = false
+    batchMsg.value = ''
+    tableRef.value?.clearSelection()
+  } catch (e) {
+    ElMessage.error('批量发送失败: ' + e.message)
+  } finally {
+    batchSending.value = false
+  }
 }
 
 async function toggle(boss, field) {

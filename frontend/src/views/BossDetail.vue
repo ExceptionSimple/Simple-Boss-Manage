@@ -22,7 +22,18 @@
       </div>
     </el-card>
 
-    <h3 style="margin:20px 0 12px;">聊天记录 ({{ msgTotal }})</h3>
+    <div style="display:flex;align-items:center;gap:12px;margin-top:16px;">
+      <h3 style="margin:0;">聊天记录 ({{ msgTotal }})</h3>
+      <el-button type="primary" size="small" @click="showSendDialog = true" :icon="Promotion">发送消息</el-button>
+    </div>
+
+    <el-dialog v-model="showSendDialog" title="发送消息" width="450px">
+      <el-input v-model="sendMsg" type="textarea" :rows="4" placeholder="输入要发送的消息..." />
+      <template #footer>
+        <el-button @click="showSendDialog = false">取消</el-button>
+        <el-button type="primary" @click="doSend" :loading="sending" :disabled="!sendMsg.trim()">发送</el-button>
+      </template>
+    </el-dialog>
     <div class="chat-container" v-if="messages.length">
       <div v-for="m in messages" :key="m.id" class="chat-row" :class="'chat-' + m.side">
         <div class="chat-msg">
@@ -44,6 +55,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { Promotion } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { api } from '../api'
 
 const route = useRoute()
@@ -52,6 +65,24 @@ const bossId = route.params.id
 const boss = ref(null)
 const messages = ref([])
 const msgTotal = ref(0)
+const showSendDialog = ref(false)
+const sendMsg = ref('')
+const sending = ref(false)
+
+async function doSend() {
+  if (!sendMsg.value.trim()) return
+  sending.value = true
+  try {
+    await api.sendMessage({ boss_name: boss.value.name, message: sendMsg.value })
+    ElMessage.success('消息已发送')
+    showSendDialog.value = false
+    sendMsg.value = ''
+  } catch (e) {
+    ElMessage.error('发送失败: ' + e.message)
+  } finally {
+    sending.value = false
+  }
+}
 
 function formatTime(ts) {
   if (!ts) return ''

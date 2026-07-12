@@ -1,0 +1,152 @@
+[
+  {
+    "name": "__a",
+    "value": "50804109.1773635725.1773635725.1782966086.57.2.55.57",
+    "domain": ".zhipin.com",
+    "path": "/",
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "None",
+    "expires": 1818423936
+  },
+  {
+    "name": "__c",
+    "value": "1782966086",
+    "domain": ".zhipin.com",
+    "path": "/",
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "None",
+    "expires": -1
+  },
+  {
+    "name": "__g",
+    "value": "-",
+    "domain": ".zhipin.com",
+    "path": "/",
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "None",
+    "expires": -1
+  },
+  {
+    "name": "__l",
+    "value": "r=https%3A%2F%2Fwww.google.com%2F&l=%2F&s=1",
+    "domain": ".zhipin.com",
+    "path": "/",
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "None",
+    "expires": -1
+  },
+  {
+    "name": "__zp_seo_uuid__",
+    "value": "f8da13f3-725b-4cae-a69c-6d1d02c28057",
+    "domain": ".zhipin.com",
+    "path": "/",
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "None",
+    "expires": -1
+  },
+  {
+    "name": "__zp_stoken__",
+    "value": "7398gPj%2FDhsK3w7rDgTIkFz4%2BKzw0Oj4%2FNjI8Pj90IjY9PDU%2FPRsRwrbCrWNXw4zDmMKzNCs%2FNj81PjU2NEAbPzo3Nj48NzfEt8K9NDc3wp4%2FLxkXwrXCp3Ffw4cCVRAjwrQCGy3Dr8K0AjjCviInAxEOBVUCYQJWYQ0NXwwDBQURCg8NAlMHEAJfUlthAxEcFjp%2Fw4HDpMK7H8Kyw6XCsh3Cs8OuwrM8NTcXLUA1wqckHTM3MjU1QcS0xLbEt8S8xLrEtMS2xLfDhMO9w6DEtsS3xLzCvcS0xLbEt8O8w53EtMS2xLfEvMO8wrUtNcKRwrzCssKRxLLCtMOsxJfClsKrw7FFw7tGwo%2FCu8KDRMKeTMKiwq3Cn1LCoE9OfklWSlDCoEXCrWHCsMOBwrzCgUhGwqfCvsK9esK4WExRcGQLC3cCBzkPPcOww4I%3D",
+    "domain": ".zhipin.com",
+    "path": "/",
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "None",
+    "expires": 1784094337
+  },
+  {
+    "name": "bst",
+    "value": "V2RtghFuH73VliVtRuxxkcKSqy7DrWwCg~|RtghFuH73VliVtRuxxkcKSqy7DrWxyw~",
+    "domain": ".zhipin.com",
+    "path": "/",
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "None",
+    "expires": 1784401200
+  },
+  {
+    "name": "Hm_lpvt_194df3105ad7148dcf2b98a91b5e727a",
+    "value": "1783863927",
+    "domain": ".zhipin.com",
+    "path": "/",
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "None",
+    "expires": -1
+  },
+  {
+    "name": "Hm_lvt_194df3105ad7148dcf2b98a91b5e727a",
+    "value": "1782966086",
+    "domain": ".zhipin.com",
+    "path": "/",
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "None",
+    "expires": 1815399927
+  },
+  {
+    "name": "HMACCOUNT",
+    "value": "DE4AD8B1A82DE320",
+    "domain": ".zhipin.com",
+    "path": "/",
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "None",
+    "expires": -1
+  },
+  {
+    "name": "lastCity",
+    "value": "101280100",
+    "domain": ".zhipin.com",
+    "path": "/",
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "None",
+    "expires": 1815399926
+  },
+  {
+    "name": "wbg",
+    "value": "0",
+    "domain": ".zhipin.com",
+    "path": "/",
+    "httpOnly": true,
+    "secure": false,
+    "sameSite": "None",
+    "expires": 1784401200
+  },
+  {
+    "name": "wt2",
+    "value": "Dad-o51pD80AnhvdC-kV6VuJ3SCGvz0FfcHf9rzbW7iwFmTcANCXL03ub3SXx2lNAS_vjAz72-VMYCsXuy6jBrA~~",
+    "domain": ".zhipin.com",
+    "path": "/",
+    "httpOnly": true,
+    "secure": false,
+    "sameSite": "None",
+    "expires": 1784401200
+  },
+  {
+    "name": "zp_at",
+    "value": "F54tXhsj95r7nGriulqTWy4a2SCEpoN1qUz0iAA0l_A~",
+    "domain": ".zhipin.com",
+    "path": "/",
+    "httpOnly": true,
+    "secure": false,
+    "sameSite": "None",
+    "expires": 1784401200
+  },
+  {
+    "name": "ab_guid",
+    "value": "5f07e38e-8d55-4faf-a5f7-c71097052f75",
+    "domain": "www.zhipin.com",
+    "path": "/",
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "None",
+    "expires": 1808195724
+  }
+]
