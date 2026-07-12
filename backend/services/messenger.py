@@ -151,8 +151,17 @@ async def _launch():
 
 # ── 聊天操作 ─────────────────────────────────────────────────
 
-async def _find_and_click(page: Page, boss_name: str) -> bool:
+async def _ensure_list_page(page: Page):
+    """确保在聊天列表页，如果不在则导航过去"""
+    current = page.url
+    if "/web/geek/chat" not in current or "chat/index" in current:
+        return  # 已经在列表页
     await page.goto(GEEK_CHAT_URL, wait_until="domcontentloaded")
+
+
+async def _find_and_click(page: Page, boss_name: str, skip_nav: bool = False) -> bool:
+    if not skip_nav:
+        await _ensure_list_page(page)
     await page.wait_for_selector(".chat-content .friend-content", timeout=15000)
     await _sleep(500, 1000)
 
@@ -172,7 +181,6 @@ async def _find_and_click(page: Page, boss_name: str) -> bool:
         if found:
             await _sleep(*CHAT_OPEN_WAIT)
             return True
-        # 滚动 .chat-content 容器
         prev = await page.evaluate("document.querySelector('.chat-content')?.scrollTop || 0")
         await page.evaluate("document.querySelector('.chat-content')?.scrollBy(0, 600)")
         await _sleep(*SCROLL_WAIT)
@@ -180,6 +188,13 @@ async def _find_and_click(page: Page, boss_name: str) -> bool:
         if curr == prev:
             break
     return False
+
+
+async def _back_to_list(page: Page):
+    """从聊天详情页返回列表页"""
+    await page.evaluate("document.querySelector('.chat-header-back')?.click()")
+    await _sleep(300, 600)
+    await page.wait_for_selector(".chat-content .friend-content", timeout=10000)
 
 
 async def _send_one(page: Page, name: str, message: str) -> dict:
@@ -198,11 +213,7 @@ async def _send_one(page: Page, name: str, message: str) -> dict:
         if i < len(message) - 1:
             await asyncio.sleep(_rand(*TYPING_GAP) / 1000)
     await _sleep(120, 420)
-    btn = await page.query_selector(".chat-footer button[type='send']")
-    if btn:
-        await btn.click(delay=_rand(*CLICK_DELAY))
-    else:
-        await page.keyboard.press("Enter")
+    await page.keyboard.press("Enter")
     await _sleep(*SEND_WAIT)
     logger.info(f"消息已发送给 {name}")
     return {"name": name, "success": True}
@@ -281,7 +292,6 @@ async def import_cookies_from_json(raw: list[dict]) -> dict:
 
 
 async def send_to_boss(boss_name: str, message: str) -> dict:
-    p = browser = ctx = None
     try:
         p, browser, ctx, page = await _launch()
         if not await _find_and_click(page, boss_name):
@@ -289,36 +299,30 @@ async def send_to_boss(boss_name: str, message: str) -> dict:
         return await _send_one(page, boss_name, message)
     except Exception as e:
         return {"success": False, "error": str(e)}
-    finally:
-        if ctx: await ctx.close()
-        if browser: await browser.close()
-        if p: await p.stop()
 
 
 async def send_batch(boss_names: list[str], message: str) -> dict:
+    """批量发送：左边列表始终存在，依次点击→发送→下一个，无需返回"""
     results = []
     p = browser = ctx = None
     try:
         p, browser, ctx, page = await _launch()
+        # 导航到列表页（仅一次）
+        await _ensure_list_page(page)
+        await _sleep(500, 800)
+
         for idx, name in enumerate(boss_names):
             try:
-                if idx > 0:
-                    await page.goto(GEEK_CHAT_URL, wait_until="domcontentloaded")
-                    await page.wait_for_selector(".user-list-content .group .listitem", timeout=10000)
-                    await _sleep(300, 600)
-                if not await _find_and_click(page, name):
+                if not await _find_and_click(page, name, skip_nav=True):
                     results.append({"name": name, "success": False, "error": "未找到"})
                     continue
-                results.append(await _send_one(page, name, message))
+                result = await _send_one(page, name, message)
+                results.append(result)
                 logger.info(f"已发送: {name} ({idx + 1}/{len(boss_names)})")
-                await page.evaluate("document.querySelector('.chat-header-back')?.click()")
-                await _sleep(*BETWEEN_BOSS_WAIT)
+                # 不需要返回，左边列表一直可见，直接点下一个
             except Exception as e:
                 results.append({"name": name, "success": False, "error": str(e)})
+
         return {"results": results}
     except Exception as e:
         return {"success": False, "error": str(e)}
-    finally:
-        if ctx: await ctx.close()
-        if browser: await browser.close()
-        if p: await p.stop()
