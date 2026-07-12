@@ -3,11 +3,10 @@ import os
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from .database import init_db
 from .routers import cookie, sync, bosses, stats, messenger
 
-AVATAR_DIR = os.path.join(Path(__file__).parent.parent, "avatar")
+AVATAR_DIR = os.path.join(Path(__file__).parent.parent, "frontend", "public", "avatar")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,7 +40,6 @@ def startup():
 
 
 os.makedirs(AVATAR_DIR, exist_ok=True)
-app.mount("/avatar", StaticFiles(directory=AVATAR_DIR), name="avatar")
 
 
 @app.get("/api/health")

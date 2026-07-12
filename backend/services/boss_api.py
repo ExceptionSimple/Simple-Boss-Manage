@@ -64,6 +64,7 @@ async def fetch_job_data(encrypt_boss_id: str) -> dict:
         zp = data["zpData"]
         return {
             "job": zp["job"],
+            "title": zp.get("data", {}).get("title", ""),
             "tinyUrl": zp.get("data", {}).get("tinyUrl", ""),
             "securityId": zp.get("data", {}).get("securityId", ""),
         }

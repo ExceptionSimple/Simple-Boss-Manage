@@ -14,6 +14,7 @@ export const api = {
   // Config
   getConfig: () => request('/config'),
   updateConfig: (data) => request('/config', { method: 'PUT', body: JSON.stringify(data) }),
+  generateMessage: (data) => request('/messenger/generate-message', { method: 'POST', body: JSON.stringify(data) }),
 
   // Cookie
   saveCookie: (cookie) => request('/cookie', { method: 'PUT', body: JSON.stringify({ cookie }) }),

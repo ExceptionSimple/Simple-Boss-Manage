@@ -27,6 +27,7 @@ def init_db():
             encrypt_boss_id  TEXT UNIQUE NOT NULL,
             boss_id          INTEGER,
             name             TEXT,
+            boss_title       TEXT,
             avatar_url       TEXT,
             brand_name       TEXT,
             job_name         TEXT,
@@ -79,6 +80,9 @@ def init_db():
         conn.commit()
     if "has_written_test" not in boss_cols:
         conn.execute("ALTER TABLE bosses ADD COLUMN has_written_test INTEGER DEFAULT 0")
+        conn.commit()
+    if "boss_title" not in boss_cols:
+        conn.execute("ALTER TABLE bosses ADD COLUMN boss_title TEXT")
         conn.commit()
 
     conn.close()

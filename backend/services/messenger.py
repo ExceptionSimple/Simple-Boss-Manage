@@ -250,6 +250,20 @@ async def check_login_status() -> dict:
         if p: await p.stop()
 
 
+def _sync_cookie_to_db(cookies: list[dict]):
+    """将 Playwright cookie 数组转为原始字符串存入 config 表（供 httpx 同步使用）"""
+    from ..database import get_db
+    parts = []
+    for c in cookies:
+        parts.append(f"{c['name']}={c['value']}")
+    cookie_str = "; ".join(parts)
+    conn = get_db()
+    conn.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('cookie', ?)", (cookie_str,))
+    conn.commit()
+    conn.close()
+    logger.info(f"已将 {len(cookies)} 个 Cookie 同步到数据库")
+
+
 async def login_and_capture() -> dict:
     p = await async_playwright().start()
     browser = await p.chromium.launch(
@@ -269,6 +283,7 @@ async def login_and_capture() -> dict:
         await asyncio.sleep(2)
         cookies = await ctx.cookies()
         _save_cookies(cookies)
+        _sync_cookie_to_db(cookies)
         # 同时保存 localStorage
         storage = await page.evaluate("JSON.stringify(window.localStorage)")
         _save_storage(storage)
@@ -287,6 +302,7 @@ async def login_and_capture() -> dict:
 async def import_cookies_from_json(raw: list[dict]) -> dict:
     normalized = _normalize(raw)
     _save_cookies(normalized)
+    _sync_cookie_to_db(normalized)
     logger.info(f"已导入 {len(normalized)} 个 Cookie")
     return {"ok": True, "count": len(normalized)}
 

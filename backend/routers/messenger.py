@@ -6,6 +6,7 @@ from ..services.messenger import (
     send_to_boss, send_batch, login_and_capture,
     import_cookies_from_json, check_login_status,
 )
+from ..services.msg_generator import generate_message
 
 logger = logging.getLogger("messenger")
 router = APIRouter()
@@ -43,6 +44,15 @@ async def api_import_cookies(body: ImportCookiesBody):
     cookies = json.loads(body.data)
     await import_cookies_from_json(cookies)
     return {"ok": True, "count": len(cookies)}
+
+
+@router.post("/messenger/generate-message")
+async def api_generate_message(body: dict):
+    """根据配置生成消息（固定模板或 AI）"""
+    name = body.get("name", "")
+    boss_title = body.get("boss_title", "")
+    message = await generate_message(name, boss_title)
+    return {"message": message}
 
 
 @router.post("/messenger/send")

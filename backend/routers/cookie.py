@@ -44,18 +44,6 @@ def cookie_status():
     return {"configured": True, "cookie_preview": preview}
 
 
-class ConfigBody(BaseModel):
-    sync_days: int = 0  # 0 = 全部
-
-
-@router.get("/config")
-def get_config():
-    conn = get_db()
-    row = conn.execute("SELECT value FROM config WHERE key='sync_days'").fetchone()
-    conn.close()
-    return {"sync_days": int(row["value"]) if row else 0}
-
-
 @router.get("/cookie/verify")
 def verify_cookie():
     """发一个真实请求验证 Cookie 是否有效"""
@@ -91,13 +79,45 @@ def verify_cookie():
         return {"valid": False, "message": str(e)}
 
 
-@router.put("/config")
-def update_config(body: ConfigBody):
+# ── 通用配置 ────────────────────────────────────────────────
+
+def _cfg(key: str) -> str | None:
     conn = get_db()
-    conn.execute(
-        "INSERT OR REPLACE INTO config (key, value) VALUES ('sync_days', ?)",
-        (str(body.sync_days),),
-    )
+    row = conn.execute("SELECT value FROM config WHERE key=?", (key,)).fetchone()
+    conn.close()
+    return row["value"] if row else None
+
+
+def _set_cfg(key: str, value: str):
+    conn = get_db()
+    conn.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (key, value))
     conn.commit()
     conn.close()
-    return {"ok": True, "sync_days": body.sync_days}
+
+
+class ConfigBody(BaseModel):
+    sync_days: int | None = None
+    api_key: str | None = None
+    api_base: str | None = None
+    msg_mode: str | None = None
+    msg_template: str | None = None
+    ai_prompt: str | None = None
+
+
+@router.get("/config")
+def get_config():
+    return {
+        "sync_days": int(_cfg("sync_days") or 0),
+        "api_key": _cfg("api_key") or "",
+        "api_base": _cfg("api_base") or "",
+        "msg_mode": _cfg("msg_mode") or "fixed",
+        "msg_template": _cfg("msg_template") or "",
+        "ai_prompt": _cfg("ai_prompt") or "",
+    }
+
+
+@router.put("/config")
+def update_config(body: ConfigBody):
+    for key, val in body.model_dump(exclude_none=True).items():
+        _set_cfg(key, str(val))
+    return {"ok": True}

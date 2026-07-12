@@ -16,6 +16,7 @@ node_modules/
 *.db
 
 # Avatars (downloaded)
+frontend/public/avatar/
 avatar/
 
 # Environment

@@ -8,7 +8,7 @@ from pathlib import Path
 from ..database import get_db
 from . import boss_api
 
-AVATAR_DIR = os.path.join(Path(__file__).parent.parent.parent, "avatar")
+AVATAR_DIR = os.path.join(Path(__file__).parent.parent.parent, "frontend", "public", "avatar")
 
 logger = logging.getLogger("sync")
 
@@ -96,11 +96,12 @@ async def sync_all():
                 conn.execute(
                     """
                     UPDATE bosses SET
-                        location_name = ?, salary_desc = ?, has_interview = ?,
+                        boss_title = ?, location_name = ?, salary_desc = ?, has_interview = ?,
                         updated_at = datetime('now', 'localtime')
                     WHERE encrypt_boss_id = ?
                     """,
                     (
+                        result.get("title", ""),
                         job.get("locationName", ""),
                         job.get("salaryDesc", ""),
                         1 if job.get("hasInterview") else 0,

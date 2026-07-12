@@ -61,6 +61,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="brand_name" label="公司" min-width="120" />
+      <el-table-column prop="boss_title" label="职位" width="80" />
       <el-table-column prop="job_name" label="岗位" min-width="160" show-overflow-tooltip />
       <el-table-column label="城市" width="90">
         <template #default="{ row }">{{ row.location_name || row.job_city }}</template>
