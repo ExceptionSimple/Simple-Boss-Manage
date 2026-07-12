@@ -153,12 +153,12 @@ async def _launch():
 
 async def _find_and_click(page: Page, boss_name: str) -> bool:
     await page.goto(GEEK_CHAT_URL, wait_until="domcontentloaded")
-    await page.wait_for_selector(".user-list-content .group .listitem", timeout=15000)
+    await page.wait_for_selector(".chat-content .friend-content", timeout=15000)
     await _sleep(500, 1000)
 
     for _ in range(40):
         found = await page.evaluate("""(name) => {
-            const items = document.querySelectorAll(".user-list-content .group .listitem");
+            const items = document.querySelectorAll(".chat-content .friend-content");
             for (const item of items) {
                 const el = item.querySelector(".title-box .name-box .name-text");
                 if (el && el.textContent.trim() === name) {
@@ -172,10 +172,11 @@ async def _find_and_click(page: Page, boss_name: str) -> bool:
         if found:
             await _sleep(*CHAT_OPEN_WAIT)
             return True
-        prev = await page.evaluate("document.querySelector('.user-list-content')?.scrollTop || 0")
-        await page.evaluate("document.querySelector('.user-list-content')?.scrollBy(0, 600)")
+        # 滚动 .chat-content 容器
+        prev = await page.evaluate("document.querySelector('.chat-content')?.scrollTop || 0")
+        await page.evaluate("document.querySelector('.chat-content')?.scrollBy(0, 600)")
         await _sleep(*SCROLL_WAIT)
-        curr = await page.evaluate("document.querySelector('.user-list-content')?.scrollTop || 0")
+        curr = await page.evaluate("document.querySelector('.chat-content')?.scrollTop || 0")
         if curr == prev:
             break
     return False
