@@ -315,6 +315,34 @@ async def send_to_boss(boss_name: str, message: str) -> dict:
         return await _send_one(page, boss_name, message)
     except Exception as e:
         return {"success": False, "error": str(e)}
+    # 不关闭浏览器，用户手动关闭
+
+
+async def send_batch_items(items: list[dict]) -> dict:
+    """批量发送，每个 BOSS 独立消息。发送完不关闭浏览器，用户手动关。"""
+    results = []
+    try:
+        p, browser, ctx, page = await _launch()
+        await _ensure_list_page(page)
+        await _sleep(500, 800)
+
+        for idx, item in enumerate(items):
+            name = item["name"]
+            msg = item["message"]
+            try:
+                if not await _find_and_click(page, name, skip_nav=True):
+                    results.append({"name": name, "success": False, "error": "未找到"})
+                    continue
+                result = await _send_one(page, name, msg)
+                results.append(result)
+                logger.info(f"已发送: {name} ({idx + 1}/{len(items)})")
+            except Exception as e:
+                results.append({"name": name, "success": False, "error": str(e)})
+
+        return {"results": results}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    # 不关闭浏览器，用户手动关闭
 
 
 async def send_batch(boss_names: list[str], message: str) -> dict:

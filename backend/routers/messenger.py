@@ -2,11 +2,13 @@ import json
 import logging
 from fastapi import APIRouter
 from pydantic import BaseModel
+from fastapi.responses import StreamingResponse
 from ..services.messenger import (
     send_to_boss, send_batch, login_and_capture,
     import_cookies_from_json, check_login_status,
 )
-from ..services.msg_generator import generate_message
+from ..services.msg_generator import generate_message, generate_ai_message_stream
+from ..routers.cookie import _cfg
 
 logger = logging.getLogger("messenger")
 router = APIRouter()
@@ -51,6 +53,18 @@ async def api_generate_message(body: dict):
     """根据配置生成消息（固定模板或 AI）"""
     name = body.get("name", "")
     boss_title = body.get("boss_title", "")
+    mode = (_cfg("msg_mode") or "fixed")
+
+    # AI 模式用流式返回
+    if mode == "ai":
+        prompt = _cfg("ai_prompt") or f"请为{boss_title or 'HR'}{name or ''}写一段简短的打招呼消息"
+        async def gen():
+            async for chunk in generate_ai_message_stream(prompt, name, boss_title):
+                yield f"data: {json.dumps({'chunk': chunk}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'done': True})}\n\n"
+        return StreamingResponse(gen(), media_type="text/event-stream")
+
+    # 固定模板直接返回
     message = await generate_message(name, boss_title)
     return {"message": message}
 

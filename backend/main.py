@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import init_db
-from .routers import cookie, sync, bosses, stats, messenger
+from .routers import cookie, sync, bosses, stats, messenger, reminders
 
 AVATAR_DIR = os.path.join(Path(__file__).parent.parent, "frontend", "public", "avatar")
 
@@ -30,6 +30,7 @@ app.include_router(sync.router, prefix="/api", tags=["Sync"])
 app.include_router(bosses.router, prefix="/api", tags=["Bosses"])
 app.include_router(stats.router, prefix="/api", tags=["Stats"])
 app.include_router(messenger.router, prefix="/api", tags=["Messenger"])
+app.include_router(reminders.router, prefix="/api", tags=["Reminders"])
 
 
 @app.on_event("startup")

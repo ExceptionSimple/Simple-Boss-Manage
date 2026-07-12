@@ -196,15 +196,16 @@ function handleEvent(type, data) {
 }
 
 async function testTemplate() {
-  const r = await api.generateMessage({ name: '测试', boss_title: 'HR' })
-  testMsg.value = r.message
+  const msg = await api.generateMessage({ name: '测试', boss_title: 'HR' })
+  testMsg.value = msg
 }
 
 async function testAi() {
-  testingAi.value = true; testMsg.value = ''
+  testingAi.value = true; testMsg.value = '生成中...'
   try {
-    const r = await api.generateMessage({ name: '测试', boss_title: 'HR' })
-    testMsg.value = r.message
+    await api.generateMessage({ name: '测试', boss_title: 'HR' }, (text) => {
+      testMsg.value = text
+    })
   } catch (e) { testMsg.value = '生成失败: ' + e.message }
   finally { testingAi.value = false }
 }

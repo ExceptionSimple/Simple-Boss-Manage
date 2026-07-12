@@ -14,7 +14,38 @@ export const api = {
   // Config
   getConfig: () => request('/config'),
   updateConfig: (data) => request('/config', { method: 'PUT', body: JSON.stringify(data) }),
-  generateMessage: (data) => request('/messenger/generate-message', { method: 'POST', body: JSON.stringify(data) }),
+  generateMessage: async (data, onChunk) => {
+    const resp = await fetch('/api/messenger/generate-message', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    // 如果是 SSE 流（AI 模式），逐块回调
+    const ct = resp.headers.get('content-type') || ''
+    if (ct.includes('text/event-stream') && onChunk) {
+      const reader = resp.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let result = ''
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = ''
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const d = JSON.parse(line.slice(6))
+            if (d.done) return result
+            if (d.chunk) { result += d.chunk; onChunk(result) }
+          }
+        }
+      }
+      return result
+    }
+    // 非流式（固定模板），直接返回 JSON
+    const r = await resp.json()
+    return r.message
+  },
 
   // Cookie
   saveCookie: (cookie) => request('/cookie', { method: 'PUT', body: JSON.stringify({ cookie }) }),
@@ -41,6 +72,15 @@ export const api = {
   sendMessage: (data) => request('/messenger/send', { method: 'POST', body: JSON.stringify(data) }),
   sendBatchMessage: (data) => request('/messenger/send-batch', { method: 'POST', body: JSON.stringify(data) }),
   deleteAllBosses: () => request('/bosses', { method: 'DELETE' }),
+
+  // Reminders
+  getReminders: (params) => {
+    const q = new URLSearchParams(params).toString()
+    return request(`/reminders${q ? '?' + q : ''}`)
+  },
+  previewReminders: (data) => request('/reminders/preview', { method: 'POST', body: JSON.stringify(data) }),
+  sendReminders: (data) => request('/reminders/send', { method: 'POST', body: JSON.stringify(data) }),
+  sendRemindersWithMessages: (data) => request('/reminders/send-messages', { method: 'POST', body: JSON.stringify(data) }),
 
   // Stats
   getOverview: () => request('/stats/overview'),
