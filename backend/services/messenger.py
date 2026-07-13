@@ -197,9 +197,8 @@ async def _back_to_list(page: Page):
     await page.wait_for_selector(".chat-content .friend-content", timeout=10000)
 
 
-async def _send_one(page: Page, name: str, message: str) -> dict:
-    await page.wait_for_selector("#chat-input", timeout=10000)
-    await _sleep(300, 500)
+async def _type_message(page: Page, message: str):
+    """逐字输入消息并回车发送"""
     el = await page.query_selector("#chat-input")
     if el:
         await el.click(delay=_rand(*CLICK_DELAY))
@@ -214,9 +213,110 @@ async def _send_one(page: Page, name: str, message: str) -> dict:
             await asyncio.sleep(_rand(*TYPING_GAP) / 1000)
     await _sleep(120, 420)
     await page.keyboard.press("Enter")
-    await _sleep(*SEND_WAIT)
+
+
+async def _check_send_status(page: Page) -> bool:
+    """检测 DOM 中的发送状态。True=发送成功，False=发送失败"""
+    try:
+        await asyncio.sleep(0.5)
+
+        # 先检查是否有错误标记
+        has_error = await page.evaluate("""() => {
+            const el = document.querySelector('.friend-content.selected .last-msg');
+            if (!el) return false;
+            return !!el.querySelector('.status-error');
+        }""")
+        if has_error:
+            logger.warning("检测到 .status-error，发送失败")
+            return False
+
+        # 轮询等待 loading 消失（最多 5s）
+        for _ in range(17):  # ~17 * 0.3s ≈ 5.1s
+            still_loading = await page.evaluate("""() => {
+                const el = document.querySelector('.friend-content.selected .last-msg');
+                if (!el) return false;
+                return !!el.querySelector('.status-loading');
+            }""")
+            if not still_loading:
+                # loading 消失后再检查一次 error
+                has_error = await page.evaluate("""() => {
+                    const el = document.querySelector('.friend-content.selected .last-msg');
+                    if (!el) return false;
+                    return !!el.querySelector('.status-error');
+                }""")
+                if has_error:
+                    logger.warning("发送完成后出现 .status-error")
+                    return False
+                return True
+            await asyncio.sleep(0.3)
+
+        # 超过 5s 仍在 loading
+        logger.warning("status-loading 超过 5s 未消失，判定发送失败")
+        return False
+    except Exception as e:
+        logger.warning(f"检查发送状态异常: {e}")
+        return True  # 无法检测时假定成功，避免重复发送
+
+
+async def _send_one(page: Page, name: str, message: str) -> dict:
+    await page.wait_for_selector("#chat-input", timeout=10000)
+    await _sleep(300, 500)
+
+    await _type_message(page, message)
+
+    success = await _check_send_status(page)
+    if not success:
+        logger.warning(f"消息发送给 {name} 状态异常，重试中...")
+        await _sleep(600, 1200)
+        await _type_message(page, message)
+        success = await _check_send_status(page)
+        if success:
+            logger.info(f"消息已发送给 {name}（重试成功）")
+            return {"name": name, "success": True, "retried": True}
+        else:
+            logger.error(f"消息发送给 {name} 失败（已重试1次仍失败）")
+            return {"name": name, "success": False, "error": "发送状态异常，已重试1次仍失败"}
+
     logger.info(f"消息已发送给 {name}")
     return {"name": name, "success": True}
+
+
+# ── 失败记录 ────────────────────────────────────────────────
+
+def _record_failed(boss_name: str, message: str, error: str, encrypt_boss_id: str = None):
+    """将发送失败的消息写入数据库队列"""
+    try:
+        from ..database import get_db
+        conn = get_db()
+        conn.execute(
+            """INSERT INTO message_failed_queue (boss_name, encrypt_boss_id, message, error)
+               VALUES (?, ?, ?, ?)""",
+            (boss_name, encrypt_boss_id or "", message, error),
+        )
+        conn.commit()
+        conn.close()
+        logger.info(f"已记录失败队列: {boss_name} — {error}")
+    except Exception as e:
+        logger.error(f"记录失败队列异常: {e}")
+
+
+def _record_results(results: list[dict], items: list[dict]):
+    """根据发送结果，将失败的条目写入队列"""
+    # 构建 name -> item 的映射（找 encrypt_boss_id）
+    item_map = {}
+    for item in items:
+        item_map[item.get("name", "")] = item
+
+    for r in results:
+        if not r.get("success"):
+            name = r.get("name", "")
+            item = item_map.get(name, {})
+            _record_failed(
+                boss_name=name,
+                message=item.get("message", ""),
+                error=r.get("error", "未知错误"),
+                encrypt_boss_id=item.get("encrypt_boss_id", ""),
+            )
 
 
 # ── 公开 API ─────────────────────────────────────────────────
@@ -311,9 +411,15 @@ async def send_to_boss(boss_name: str, message: str) -> dict:
     try:
         p, browser, ctx, page = await _launch()
         if not await _find_and_click(page, boss_name):
-            return {"success": False, "error": f"未在聊天列表中找到 {boss_name}"}
-        return await _send_one(page, boss_name, message)
+            result = {"success": False, "error": f"未在聊天列表中找到 {boss_name}"}
+            _record_failed(boss_name, message, result["error"])
+            return result
+        result = await _send_one(page, boss_name, message)
+        if not result.get("success"):
+            _record_failed(boss_name, message, result.get("error", "发送失败"))
+        return result
     except Exception as e:
+        _record_failed(boss_name, message, str(e))
         return {"success": False, "error": str(e)}
     # 不关闭浏览器，用户手动关闭
 
@@ -342,6 +448,8 @@ async def send_batch_items(items: list[dict]) -> dict:
         return {"results": results}
     except Exception as e:
         return {"success": False, "error": str(e)}
+    finally:
+        _record_results(results, items)
     # 不关闭浏览器，用户手动关闭
 
 
@@ -370,3 +478,6 @@ async def send_batch(boss_names: list[str], message: str) -> dict:
         return {"results": results}
     except Exception as e:
         return {"success": False, "error": str(e)}
+    finally:
+        _items = [{"name": n, "message": message} for n in boss_names]
+        _record_results(results, _items)

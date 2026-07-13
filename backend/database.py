@@ -105,4 +105,18 @@ def init_db():
         conn.execute("ALTER TABLE sync_logs ADD COLUMN updated INTEGER DEFAULT 0")
         conn.commit()
 
+    # migration: message_failed_queue table
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS message_failed_queue (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            boss_name        TEXT NOT NULL,
+            encrypt_boss_id  TEXT,
+            message          TEXT NOT NULL,
+            error            TEXT,
+            retry_count      INTEGER DEFAULT 0,
+            created_at       TEXT DEFAULT (datetime('now', 'localtime'))
+        )
+    """)
+    conn.commit()
+
     conn.close()

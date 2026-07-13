@@ -1,6 +1,48 @@
 <template>
   <div>
     <h2 style="margin-bottom:16px;">消息提醒</h2>
+
+    <!-- 失败队列 -->
+    <el-card v-if="failedItems.length" shadow="hover" style="margin-bottom:20px;border:1px solid #f56c6c;">
+      <template #header>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="color:#f56c6c;font-weight:600;">⚠ 发送失败队列 ({{ failedItems.length }})</span>
+          <div style="display:flex;gap:8px;">
+            <el-button size="small" type="danger" @click="retryFailed([])" :loading="retryingFailed">
+              重试全部
+            </el-button>
+            <el-button size="small" @click="clearFailedQueue([])" :disabled="retryingFailed">
+              清空队列
+            </el-button>
+          </div>
+        </div>
+      </template>
+      <el-table :data="failedItems" size="small" stripe @selection-change="onFailedSelect" max-height="250">
+        <el-table-column type="selection" width="35" />
+        <el-table-column prop="boss_name" label="BOSS" width="100" />
+        <el-table-column label="消息" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.message }}</template>
+        </el-table-column>
+        <el-table-column prop="error" label="失败原因" width="150" show-overflow-tooltip />
+        <el-table-column prop="retry_count" label="重试" width="55" align="center" />
+        <el-table-column prop="created_at" label="时间" width="140" />
+        <el-table-column label="操作" width="120">
+          <template #default="{ row }">
+            <el-button type="primary" link size="small" @click="retryFailed([row.id])">重试</el-button>
+            <el-button type="danger" link size="small" @click="clearFailedQueue([row.id])">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div v-if="failedSelected.length" style="margin-top:8px;">
+        <el-button size="small" type="danger" @click="retryFailed(failedSelected.map(r => r.id))">
+          重试选中 ({{ failedSelected.length }})
+        </el-button>
+        <el-button size="small" @click="clearFailedQueue(failedSelected.map(r => r.id))">
+          删除选中 ({{ failedSelected.length }})
+        </el-button>
+      </div>
+    </el-card>
+
     <p style="color:#999;font-size:13px;margin-bottom:16px;">以下 BOSS 的最后一条消息由你发送且未被对方阅读。</p>
 
     <el-table :data="items" v-loading="loading" stripe border @selection-change="onSelect"
@@ -99,6 +141,37 @@ const showChat = ref(false)
 const chatBoss = ref(null)
 const chatMsgs = ref([])
 
+// 失败队列
+const failedItems = ref([])
+const failedSelected = ref([])
+const retryingFailed = ref(false)
+
+async function fetchFailedQueue() {
+  try { failedItems.value = (await api.getFailedQueue()).items } catch (e) { /* ignore */ }
+}
+
+function onFailedSelect(val) { failedSelected.value = val }
+
+async function retryFailed(ids) {
+  retryingFailed.value = true
+  try {
+    const r = await api.retryFailedQueue(ids)
+    const ok = r.results?.filter(x => x.success).length || 0
+    const fail = r.results?.filter(x => !x.success).length || 0
+    ElMessage.success(`重试完成：${ok} 成功, ${fail} 失败`)
+    await fetchFailedQueue()
+  } catch (e) { ElMessage.error('重试失败: ' + e.message) }
+  finally { retryingFailed.value = false }
+}
+
+async function clearFailedQueue(ids) {
+  try {
+    const r = await api.deleteFailedQueue(ids)
+    ElMessage.success(`已清除 ${r.deleted} 条记录`)
+    await fetchFailedQueue()
+  } catch (e) { ElMessage.error('清除失败: ' + e.message) }
+}
+
 async function fetchData() {
   loading.value = true
   try {
@@ -157,6 +230,7 @@ async function doSend() {
     ElMessage.success(`发送完成：${ok} 成功, ${fail} 失败。浏览器保持打开，请手动关闭。`)
     showPreview.value = false
     fetchData()
+    fetchFailedQueue()
   } catch (e) { ElMessage.error('发送失败: ' + e.message) }
   finally { sending.value = false }
 }
@@ -171,7 +245,7 @@ function fmtDate(ts) {
   return new Date(ts).toLocaleDateString('zh-CN')
 }
 
-onMounted(fetchData)
+onMounted(() => { fetchData(); fetchFailedQueue() })
 </script>
 
 <style scoped>

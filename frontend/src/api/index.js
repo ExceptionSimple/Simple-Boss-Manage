@@ -83,6 +83,11 @@ export const api = {
   sendReminders: (data) => request('/reminders/send', { method: 'POST', body: JSON.stringify(data) }),
   sendRemindersWithMessages: (data) => request('/reminders/send-messages', { method: 'POST', body: JSON.stringify(data) }),
 
+  // Failed Queue
+  getFailedQueue: () => request('/reminders/failed-queue'),
+  retryFailedQueue: (ids) => request('/reminders/failed-queue/retry', { method: 'POST', body: JSON.stringify({ ids: ids || [] }) }),
+  deleteFailedQueue: (ids) => request('/reminders/failed-queue', { method: 'DELETE', body: JSON.stringify({ ids: ids || [] }) }),
+
   // Stats
   getOverview: () => request('/stats/overview'),
   getCityStats: () => request('/stats/cities'),
