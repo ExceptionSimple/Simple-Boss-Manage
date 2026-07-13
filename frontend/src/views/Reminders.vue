@@ -6,7 +6,7 @@
     <el-table :data="items" v-loading="loading" stripe border @selection-change="onSelect"
       style="width:100%;margin-bottom:16px;">
       <el-table-column type="selection" width="40" />
-      <el-table-column label="BOSS" min-width="100">
+      <el-table-column label="BOSS" width="115">
         <template #default="{ row }">
           <div style="display:flex;align-items:center;gap:8px;">
             <el-avatar v-if="row.avatar_url" :src="'/avatar/' + row.avatar_url" :size="28" />
@@ -14,19 +14,22 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column prop="brand_name" label="公司" min-width="120" />
-      <el-table-column prop="job_name" label="岗位" min-width="140" show-overflow-tooltip />
+      <el-table-column prop="brand_name" label="公司" width="170" show-overflow-tooltip />
+      <el-table-column prop="job_name" label="岗位" width="125" show-overflow-tooltip />
       <el-table-column label="城市" width="90">
         <template #default="{ row }">{{ row.location_name || row.job_city }}</template>
       </el-table-column>
-      <el-table-column label="最近消息" width="80" align="center">
+      <el-table-column label="最近联系" width="110" sortable>
+        <template #default="{ row }">{{ fmtDate(row.last_msg_time) }}</template>
+      </el-table-column>
+      <el-table-column label="连续未回" width="110" align="center" sortable prop="unanswered_count">
         <template #default="{ row }">
-          <el-tag :type="row.last_msg_status === 1 ? 'warning' : 'info'" size="small">
-            {{ row.last_msg_status === 1 ? '未读' : '未知' }}
+          <el-tag :type="row.unanswered_count > 1 ? 'danger' : 'warning'" size="small">
+            {{ row.unanswered_count }} 条
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="最近消息预览" min-width="180" show-overflow-tooltip>
+      <el-table-column label="最近消息预览" min-width="160" show-overflow-tooltip>
         <template #default="{ row }">{{ row.last_msg_preview }}</template>
       </el-table-column>
       <el-table-column label="操作" width="100">
@@ -161,6 +164,11 @@ async function doSend() {
 function fmtTime(ts) {
   if (!ts) return ''
   return new Date(ts).toLocaleString('zh-CN')
+}
+
+function fmtDate(ts) {
+  if (!ts) return '-'
+  return new Date(ts).toLocaleDateString('zh-CN')
 }
 
 onMounted(fetchData)

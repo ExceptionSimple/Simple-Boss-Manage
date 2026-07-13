@@ -32,7 +32,15 @@ def list_reminders(
     total = total_row["cnt"] if total_row else 0
 
     rows = conn.execute("""
-        SELECT b.*, cm.push_text AS last_msg_text, cm.status AS last_msg_status, cm.time AS last_msg_time
+        SELECT b.*,
+            cm.push_text AS last_msg_text,
+            cm.status AS last_msg_status,
+            cm.time AS last_msg_time,
+            (SELECT COUNT(*) FROM chat_messages
+             WHERE encrypt_boss_id = b.encrypt_boss_id AND side = 'right'
+               AND time > COALESCE(
+                 (SELECT MAX(time) FROM chat_messages WHERE encrypt_boss_id = b.encrypt_boss_id AND side = 'left'), 0)
+            ) AS unanswered_count
         FROM bosses b
         INNER JOIN chat_messages cm ON cm.id = (
             SELECT id FROM chat_messages
@@ -40,7 +48,7 @@ def list_reminders(
             ORDER BY time DESC LIMIT 1
         )
         WHERE cm.side = 'right' AND cm.status != 2
-        ORDER BY cm.time DESC
+        ORDER BY unanswered_count DESC, cm.time DESC
         LIMIT ? OFFSET ?
     """, (size, offset)).fetchall()
     conn.close()
