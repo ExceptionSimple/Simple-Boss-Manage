@@ -42,26 +42,25 @@ def overview():
     total_cities = conn.execute("SELECT COUNT(DISTINCT COALESCE(NULLIF(location_name,''), job_city)) as cnt FROM bosses").fetchone()["cnt"]
     total_positions = conn.execute("SELECT COUNT(DISTINCT position_name) as cnt FROM bosses WHERE position_name != ''").fetchone()["cnt"]
 
-    # 今日 vs 昨天
+    # 今日 vs 昨天（有消息的 BOSS 数）
     today_ms = _start_of_day(0)
     yest_ms_start = _start_of_day(1)
-    today_count = conn.execute("SELECT COUNT(*) as cnt FROM chat_messages WHERE time >= ?", (today_ms,)).fetchone()["cnt"]
-    yest_count = conn.execute("SELECT COUNT(*) as cnt FROM chat_messages WHERE time >= ? AND time < ?", (yest_ms_start, today_ms)).fetchone()["cnt"]
+    today_count = conn.execute("SELECT COUNT(DISTINCT encrypt_boss_id) as cnt FROM chat_messages WHERE time >= ?", (today_ms,)).fetchone()["cnt"]
+    yest_count = conn.execute("SELECT COUNT(DISTINCT encrypt_boss_id) as cnt FROM chat_messages WHERE time >= ? AND time < ?", (yest_ms_start, today_ms)).fetchone()["cnt"]
 
     # 本周 vs 上周
     week_ms = _start_of_week(0)
     last_week_ms_start = _start_of_week(1)
-    week_count = conn.execute("SELECT COUNT(*) as cnt FROM chat_messages WHERE time >= ?", (week_ms,)).fetchone()["cnt"]
-    last_week_count = conn.execute("SELECT COUNT(*) as cnt FROM chat_messages WHERE time >= ? AND time < ?", (last_week_ms_start, week_ms)).fetchone()["cnt"]
+    week_count = conn.execute("SELECT COUNT(DISTINCT encrypt_boss_id) as cnt FROM chat_messages WHERE time >= ?", (week_ms,)).fetchone()["cnt"]
+    last_week_count = conn.execute("SELECT COUNT(DISTINCT encrypt_boss_id) as cnt FROM chat_messages WHERE time >= ? AND time < ?", (last_week_ms_start, week_ms)).fetchone()["cnt"]
     week_resume = conn.execute("SELECT COUNT(*) as cnt FROM bosses WHERE is_resume_sent = 1 AND last_msg_time >= ?", (week_ms,)).fetchone()["cnt"]
     last_week_resume = conn.execute("SELECT COUNT(*) as cnt FROM bosses WHERE is_resume_sent = 1 AND last_msg_time >= ? AND last_msg_time < ?", (last_week_ms_start, week_ms)).fetchone()["cnt"]
 
     # 本月 vs 上月
     month_ms = _start_of_month(0)
     last_month_ms_start = _start_of_month(1)
-    last2_month_ms_start = _start_of_month(2)
-    month_count = conn.execute("SELECT COUNT(*) as cnt FROM chat_messages WHERE time >= ?", (month_ms,)).fetchone()["cnt"]
-    last_month_count = conn.execute("SELECT COUNT(*) as cnt FROM chat_messages WHERE time >= ? AND time < ?", (last_month_ms_start, month_ms)).fetchone()["cnt"]
+    month_count = conn.execute("SELECT COUNT(DISTINCT encrypt_boss_id) as cnt FROM chat_messages WHERE time >= ?", (month_ms,)).fetchone()["cnt"]
+    last_month_count = conn.execute("SELECT COUNT(DISTINCT encrypt_boss_id) as cnt FROM chat_messages WHERE time >= ? AND time < ?", (last_month_ms_start, month_ms)).fetchone()["cnt"]
     month_resume = conn.execute("SELECT COUNT(*) as cnt FROM bosses WHERE is_resume_sent = 1 AND last_msg_time >= ?", (month_ms,)).fetchone()["cnt"]
     last_month_resume = conn.execute("SELECT COUNT(*) as cnt FROM bosses WHERE is_resume_sent = 1 AND last_msg_time >= ? AND last_msg_time < ?", (last_month_ms_start, month_ms)).fetchone()["cnt"]
 
