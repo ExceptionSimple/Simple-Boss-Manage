@@ -70,6 +70,20 @@
         <template #default="{ row }">{{ row.location_name || row.job_city }}</template>
       </el-table-column>
       <el-table-column prop="salary_desc" label="薪资" width="110" v-if="vis('salary')" />
+      <el-table-column label="投递日期" width="130" v-if="vis('resume_date')">
+        <template #default="{ row }">
+          <template v-if="row.is_resume_sent">
+            <el-date-picker
+              v-model="row._resumeDate"
+              type="date"
+              size="small"
+              style="width:120px"
+              @change="updateResumeDate(row)"
+            />
+          </template>
+          <span v-else style="color:#ccc;">-</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="first_msg_time" label="首次联系" width="110" sortable="custom" v-if="vis('first_msg_time')">
         <template #default="{ row }">{{ fmtDate(row.first_msg_time) }}</template>
       </el-table-column>
@@ -139,6 +153,7 @@ const columnDefs = reactive([
   { key: 'interview', label: '面试', visible: true },
   { key: 'resume', label: '简历', visible: true },
   { key: 'test', label: '笔试', visible: true },
+  { key: 'resume_date', label: '投递日期', visible: false },
 ])
 
 function vis(key) {
@@ -160,10 +175,18 @@ async function fetchData() {
   }
   try {
     const r = await api.getBosses(params)
-    bosses.value = r.items
+    bosses.value = r.items.map(b => {
+      b._resumeDate = b.send_resume_datetime ? new Date(b.send_resume_datetime) : null
+      return b
+    })
     total.value = r.total
   } catch (e) { /* ignore */ }
   loading.value = false
+}
+
+async function updateResumeDate(row) {
+  const ts = row._resumeDate ? row._resumeDate.getTime() : null
+  await api.updateBoss(row.encrypt_boss_id, { send_resume_datetime: ts })
 }
 
 function search() {

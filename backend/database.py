@@ -38,7 +38,8 @@ def init_db():
             job_type_desc    TEXT,
             has_interview      INTEGER,
             is_resume_sent     INTEGER DEFAULT 0,
-            has_written_test   INTEGER DEFAULT 0,
+            has_written_test     INTEGER DEFAULT 0,
+            send_resume_datetime INTEGER,
             first_msg_time   INTEGER,
             last_msg_time    INTEGER,
             update_time      INTEGER,
@@ -93,6 +94,9 @@ def init_db():
         conn.commit()
     if "boss_title" not in boss_cols:
         conn.execute("ALTER TABLE bosses ADD COLUMN boss_title TEXT")
+        conn.commit()
+    if "send_resume_datetime" not in boss_cols:
+        conn.execute("ALTER TABLE bosses ADD COLUMN send_resume_datetime INTEGER")
         conn.commit()
 
     conn.close()

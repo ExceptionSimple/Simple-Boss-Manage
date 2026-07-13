@@ -39,23 +39,6 @@
           </el-alert>
           <el-alert v-if="syncResult?.errors?.length" type="warning" :closable="false" style="margin-top:8px;" :title="syncResult.errors.join('; ')" />
 
-          <div style="margin-top:16px;">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-              <h4 style="font-size:14px;color:#666;">同步记录</h4>
-              <el-button size="small" text @click="loadSyncLogs">刷新</el-button>
-            </div>
-            <el-table v-if="syncLogs.length" :data="syncLogs" size="small" stripe max-height="200">
-              <el-table-column prop="sync_time" label="时间" width="150" />
-              <el-table-column label="范围" width="80">
-                <template #default="{ row }">{{ row.sync_days ? row.sync_days + '天' : '全部' }}</template>
-              </el-table-column>
-              <el-table-column prop="friends" label="联系人" width="70" align="center" />
-              <el-table-column prop="new_messages" label="新消息" width="70" align="center" />
-              <el-table-column prop="skipped" label="跳过" width="60" align="center" />
-              <el-table-column prop="errors" label="错误" min-width="120" show-overflow-tooltip />
-            </el-table>
-            <p v-else style="color:#999;font-size:13px;">暂无同步记录，执行同步后自动记录。</p>
-          </div>
         </el-card>
       </el-col>
     </el-row>
@@ -124,7 +107,6 @@ const progressDetail = ref('')
 const progressPct = ref(0)
 const syncResult = ref(null)
 const syncDays = ref(0)
-const syncLogs = ref([])
 const testMsg = ref('')
 const testingAi = ref(false)
 
@@ -136,15 +118,10 @@ const cfg = reactive({
   ai_prompt: '',
 })
 
-async function loadSyncLogs() {
-  try { syncLogs.value = await api.getSyncLogs() } catch (e) { /* ignore */ }
-}
-
 onMounted(async () => {
   try {
     const c = await api.getConfig()
     syncDays.value = c.sync_days || 0
-    loadSyncLogs()
     cfg.api_key = c.api_key || ''
     cfg.api_base = c.api_base || ''
     cfg.msg_mode = c.msg_mode || 'fixed'
@@ -214,7 +191,7 @@ function handleEvent(type, data) {
     case 'start': progressMsg.value = data.message; break
     case 'progress': progressMsg.value = data.message; progressDetail.value = data.boss_name || ''; if (data.total) progressPct.value = Math.round((data.current / data.total) * 100); break
     case 'boss_done': progressDetail.value = `${data.boss_name} — ${data.new_messages} 条新消息`; break
-    case 'done': progressPct.value = 100; progressMsg.value = '同步完成'; syncResult.value = { friends: data.friends, new_messages: data.new_messages, errors: data.errors || [] }; loadSyncLogs(); break
+    case 'done': progressPct.value = 100; progressMsg.value = '同步完成'; syncResult.value = { friends: data.friends, new_messages: data.new_messages, errors: data.errors || [] }; break
     case 'error': progressMsg.value = '出错: ' + data.message; break
   }
 }

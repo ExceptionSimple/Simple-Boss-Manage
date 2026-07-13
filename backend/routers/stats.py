@@ -1,25 +1,76 @@
+import time
 from fastapi import APIRouter
 from ..database import get_db
 
 router = APIRouter()
 
 
+def _today_start_ms() -> int:
+    now = time.localtime()
+    return int(time.mktime((now.tm_year, now.tm_mon, now.tm_mday, 0, 0, 0, 0, 0, now.tm_isdst))) * 1000
+
+
+def _start_of_day(offset_days: int = 0) -> int:
+    now = time.localtime()
+    t = time.mktime((now.tm_year, now.tm_mon, now.tm_mday - offset_days, 0, 0, 0, 0, 0, now.tm_isdst))
+    return int(t) * 1000
+
+
+def _start_of_week(offset_weeks: int = 0) -> int:
+    now = time.localtime()
+    wday = (now.tm_wday + 6) % 7
+    t = time.mktime((now.tm_year, now.tm_mon, now.tm_mday - wday - offset_weeks * 7, 0, 0, 0, 0, 0, now.tm_isdst))
+    return int(t) * 1000
+
+
+def _start_of_month(offset_months: int = 0) -> int:
+    now = time.localtime()
+    m = now.tm_mon - offset_months
+    y = now.tm_year
+    while m <= 0:
+        m += 12; y -= 1
+    t = time.mktime((y, m, 1, 0, 0, 0, 0, 0, now.tm_isdst))
+    return int(t) * 1000
+
+
 @router.get("/stats/overview")
 def overview():
     conn = get_db()
     total_communications = conn.execute("SELECT COUNT(*) as cnt FROM bosses").fetchone()["cnt"]
-    total_resume_sent = conn.execute(
-        "SELECT COUNT(*) as cnt FROM bosses WHERE is_resume_sent = 1"
-    ).fetchone()["cnt"]
-    total_interviews = conn.execute(
-        "SELECT COUNT(*) as cnt FROM bosses WHERE has_interview = 1"
-    ).fetchone()["cnt"]
-    total_cities = conn.execute(
-        "SELECT COUNT(DISTINCT COALESCE(NULLIF(location_name,''), job_city)) as cnt FROM bosses"
-    ).fetchone()["cnt"]
-    total_positions = conn.execute(
-        "SELECT COUNT(DISTINCT position_name) as cnt FROM bosses WHERE position_name != ''"
-    ).fetchone()["cnt"]
+    total_resume_sent = conn.execute("SELECT COUNT(*) as cnt FROM bosses WHERE is_resume_sent = 1").fetchone()["cnt"]
+    total_interviews = conn.execute("SELECT COUNT(*) as cnt FROM bosses WHERE has_interview = 1").fetchone()["cnt"]
+    total_cities = conn.execute("SELECT COUNT(DISTINCT COALESCE(NULLIF(location_name,''), job_city)) as cnt FROM bosses").fetchone()["cnt"]
+    total_positions = conn.execute("SELECT COUNT(DISTINCT position_name) as cnt FROM bosses WHERE position_name != ''").fetchone()["cnt"]
+
+    # 今日 vs 昨天
+    today_ms = _start_of_day(0)
+    yest_ms_start = _start_of_day(1)
+    today_count = conn.execute("SELECT COUNT(*) as cnt FROM chat_messages WHERE time >= ?", (today_ms,)).fetchone()["cnt"]
+    yest_count = conn.execute("SELECT COUNT(*) as cnt FROM chat_messages WHERE time >= ? AND time < ?", (yest_ms_start, today_ms)).fetchone()["cnt"]
+
+    # 本周 vs 上周
+    week_ms = _start_of_week(0)
+    last_week_ms_start = _start_of_week(1)
+    week_count = conn.execute("SELECT COUNT(*) as cnt FROM chat_messages WHERE time >= ?", (week_ms,)).fetchone()["cnt"]
+    last_week_count = conn.execute("SELECT COUNT(*) as cnt FROM chat_messages WHERE time >= ? AND time < ?", (last_week_ms_start, week_ms)).fetchone()["cnt"]
+    week_resume = conn.execute("SELECT COUNT(*) as cnt FROM bosses WHERE is_resume_sent = 1 AND last_msg_time >= ?", (week_ms,)).fetchone()["cnt"]
+    last_week_resume = conn.execute("SELECT COUNT(*) as cnt FROM bosses WHERE is_resume_sent = 1 AND last_msg_time >= ? AND last_msg_time < ?", (last_week_ms_start, week_ms)).fetchone()["cnt"]
+
+    # 本月 vs 上月
+    month_ms = _start_of_month(0)
+    last_month_ms_start = _start_of_month(1)
+    last2_month_ms_start = _start_of_month(2)
+    month_count = conn.execute("SELECT COUNT(*) as cnt FROM chat_messages WHERE time >= ?", (month_ms,)).fetchone()["cnt"]
+    last_month_count = conn.execute("SELECT COUNT(*) as cnt FROM chat_messages WHERE time >= ? AND time < ?", (last_month_ms_start, month_ms)).fetchone()["cnt"]
+    month_resume = conn.execute("SELECT COUNT(*) as cnt FROM bosses WHERE is_resume_sent = 1 AND last_msg_time >= ?", (month_ms,)).fetchone()["cnt"]
+    last_month_resume = conn.execute("SELECT COUNT(*) as cnt FROM bosses WHERE is_resume_sent = 1 AND last_msg_time >= ? AND last_msg_time < ?", (last_month_ms_start, month_ms)).fetchone()["cnt"]
+
+    # Top 3
+    top3 = conn.execute("""
+        SELECT b.name, b.brand_name, COUNT(cm.id) as cnt
+        FROM bosses b JOIN chat_messages cm ON cm.encrypt_boss_id = b.encrypt_boss_id
+        GROUP BY b.encrypt_boss_id ORDER BY cnt DESC LIMIT 3
+    """).fetchall()
     conn.close()
     return {
         "total_communications": total_communications,
@@ -27,6 +78,12 @@ def overview():
         "total_interviews": total_interviews,
         "total_cities": total_cities,
         "total_positions": total_positions,
+        "today": {"value": today_count, "prev": yest_count},
+        "week": {"value": week_count, "prev": last_week_count},
+        "week_resume": {"value": week_resume, "prev": last_week_resume},
+        "month": {"value": month_count, "prev": last_month_count},
+        "month_resume": {"value": month_resume, "prev": last_month_resume},
+        "top_chatters": [{"name": r["name"], "brand": r["brand_name"], "count": r["cnt"]} for r in top3],
     }
 
 
@@ -61,6 +118,30 @@ def daily_stats():
     ).fetchall()
     conn.close()
     return [{"date": r["date"], "count": r["count"]} for r in rows]
+
+
+@router.get("/stats/recent-resumes")
+def recent_resumes(limit: int = 5):
+    """最近发简历的前 N 家公司"""
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT name, brand_name, job_name, send_resume_datetime
+           FROM bosses WHERE is_resume_sent = 1 AND send_resume_datetime IS NOT NULL
+           ORDER BY send_resume_datetime DESC LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    conn.close()
+    return [{"name": r["name"], "brand": r["brand_name"], "job": r["job_name"], "datetime": r["send_resume_datetime"]} for r in rows]
+
+
+@router.get("/stats/sync-logs")
+def sync_logs(limit: int = 5):
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM sync_logs ORDER BY id DESC LIMIT ?", (limit,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 @router.get("/stats/positions")

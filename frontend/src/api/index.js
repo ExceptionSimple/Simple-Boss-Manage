@@ -88,4 +88,6 @@ export const api = {
   getCityStats: () => request('/stats/cities'),
   getPositionStats: () => request('/stats/positions'),
   getDailyStats: () => request('/stats/daily'),
+  getRecentResumes: () => request('/stats/recent-resumes?limit=5'),
+  getDashboardSyncLogs: () => request('/stats/sync-logs?limit=5'),
 }

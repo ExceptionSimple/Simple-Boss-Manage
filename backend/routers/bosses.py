@@ -85,6 +85,7 @@ class BossUpdate(BaseModel):
     has_interview: bool | None = None
     is_resume_sent: bool | None = None
     has_written_test: bool | None = None
+    send_resume_datetime: int | None = None
 
 
 @router.patch("/bosses/{encrypt_boss_id}")
@@ -101,6 +102,9 @@ def update_boss(encrypt_boss_id: str, body: BossUpdate):
     if body.has_written_test is not None:
         updates.append("has_written_test = ?")
         params.append(1 if body.has_written_test else 0)
+    if body.send_resume_datetime is not None:
+        updates.append("send_resume_datetime = ?")
+        params.append(body.send_resume_datetime)
     if updates:
         updates.append("updated_at = datetime('now', 'localtime')")
         params.append(encrypt_boss_id)

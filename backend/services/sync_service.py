@@ -160,8 +160,13 @@ async def sync_all():
                         try:
                             body_content = ""
 
+                            # 标记简历相关的判断
+                            mark_resume = False
+
                             if body_type == 1:
                                 body_content = body.get("text", "")
+                                if body_content == "对方已查看了您的附件简历":
+                                    mark_resume = True
                             elif body_type in (3, 14):
                                 interview = body.get("interview", {}) or {}
                                 body_content = interview.get("text", "")
@@ -172,10 +177,14 @@ async def sync_all():
                                 hyperlink = body.get("hyperLink", {}) or {}
                                 body_content = hyperlink.get("text", "")
                                 if re.match(r"^您的附件简历", body_content) and re.search(r"已发送给Boss点击查看附件$", body_content):
-                                    conn.execute(
-                                        "UPDATE bosses SET is_resume_sent = 1 WHERE encrypt_boss_id = ?",
-                                        (encrypt_id,),
-                                    )
+                                    mark_resume = True
+
+                            # 统一标记简历已发送
+                            if mark_resume:
+                                conn.execute(
+                                    "UPDATE bosses SET is_resume_sent = 1, send_resume_datetime = COALESCE(send_resume_datetime, ?) WHERE encrypt_boss_id = ?",
+                                    (msg_time, encrypt_id),
+                                )
                             elif body_type == 20:
                                 sticker = body.get("sticker", {}) or {}
                                 img = sticker.get("image", {}) or {}
