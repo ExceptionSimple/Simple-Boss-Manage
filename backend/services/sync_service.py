@@ -72,18 +72,23 @@ async def sync_all():
         yield _event("progress", phase="boss", message=f"[{current}/{len(friends)}] 正在同步: {label}", total=len(friends), current=current, boss_name=label)
 
         try:
-            # 2a. Upsert boss
+            # 2a. Insert or update boss (不覆盖手动字段)
             conn.execute(
                 """
-                INSERT OR REPLACE INTO bosses
-                    (encrypt_boss_id, boss_id, name, avatar_url, brand_name, job_name,
-                     position_name, job_city, location_name, job_type_desc, update_time)
-                VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)
+                INSERT OR IGNORE INTO bosses (encrypt_boss_id, boss_id, name, update_time)
+                VALUES (?, ?, ?, ?)
+                """,
+                (encrypt_id, f["friendId"], name, f.get("updateTime", 0)),
+            )
+            conn.execute(
+                """
+                UPDATE bosses SET
+                    brand_name = ?, job_name = ?, position_name = ?, job_city = ?,
+                    location_name = ?, job_type_desc = ?, update_time = MAX(update_time, ?),
+                    updated_at = datetime('now', 'localtime')
+                WHERE encrypt_boss_id = ?
                 """,
                 (
-                    encrypt_id,
-                    f["friendId"],
-                    name,
                     f.get("brandName", ""),
                     f.get("jobName", ""),
                     f.get("positionName", ""),
@@ -91,6 +96,7 @@ async def sync_all():
                     "",
                     f.get("jobTypeDesc", ""),
                     f.get("updateTime", 0),
+                    encrypt_id,
                 ),
             )
 
@@ -107,7 +113,8 @@ async def sync_all():
                 conn.execute(
                     """
                     UPDATE bosses SET
-                        boss_title = ?, location_name = ?, salary_desc = ?, has_interview = ?,
+                        boss_title = ?, location_name = ?, salary_desc = ?,
+                        has_interview = CASE WHEN ? = 1 THEN 1 ELSE has_interview END,
                         updated_at = datetime('now', 'localtime')
                     WHERE encrypt_boss_id = ?
                     """,

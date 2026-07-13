@@ -51,10 +51,12 @@
         <el-card shadow="hover">
           <template #header><h3>最近发送简历</h3></template>
           <div v-if="recentResumes.length">
-            <div v-for="(r, i) in recentResumes" :key="i" class="top-item">
-              <span class="top-name">{{ r.brand }}</span>
-              <span class="top-brand">{{ r.job }}</span>
-              <span class="top-cnt">{{ fmtDate(r.datetime) }}</span>
+            <div v-for="(r, i) in recentResumes" :key="i" class="resume-item">
+              <div class="resume-info">
+                <div class="resume-company">{{ r.brand }}</div>
+                <div class="resume-job">{{ r.job }}</div>
+              </div>
+              <div class="resume-date">{{ fmtDate(r.datetime) }}</div>
             </div>
           </div>
           <el-empty v-else description="暂无数据" :image-size="60" />
@@ -63,12 +65,14 @@
       <el-col :span="8">
         <el-card shadow="hover">
           <template #header><h3>同步日志</h3></template>
-          <div v-if="syncLogs.length">
-            <div v-for="(l, i) in syncLogs" :key="i" class="top-item">
-              <span class="top-name">{{ l.sync_time }}</span>
-              <span class="top-cnt">{{ l.new_messages }} 条</span>
-            </div>
-          </div>
+          <el-table v-if="syncLogs.length" :data="syncLogs" size="small" stripe max-height="220">
+            <el-table-column prop="sync_time" label="时间" width="140" />
+            <el-table-column label="范围" width="55">
+              <template #default="{ row }">{{ row.sync_days ? row.sync_days + '天' : '全部' }}</template>
+            </el-table-column>
+            <el-table-column prop="new_messages" label="新消息" width="60" align="center" />
+            <el-table-column prop="skipped" label="跳过" width="50" align="center" />
+          </el-table>
           <el-empty v-else description="暂无数据" :image-size="60" />
         </el-card>
       </el-col>
@@ -155,4 +159,9 @@ onMounted(async () => {
 .top-name { flex: 1; font-weight: 600; }
 .top-brand { color: #999; font-size: 13px; }
 .top-cnt { color: #10b981; font-weight: 600; font-size: 13px; }
+.resume-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #f5f5f5; }
+.resume-item:last-child { border-bottom: none; }
+.resume-company { font-weight: 600; font-size: 13px; }
+.resume-job { color: #999; font-size: 12px; }
+.resume-date { color: #6366f1; font-size: 12px; white-space: nowrap; }
 </style>
