@@ -72,6 +72,7 @@ def init_db():
             sync_days    INTEGER DEFAULT 0,
             friends      INTEGER DEFAULT 0,
             new_messages INTEGER DEFAULT 0,
+            updated      INTEGER DEFAULT 0,
             skipped      INTEGER DEFAULT 0,
             errors       TEXT
         );
@@ -97,6 +98,11 @@ def init_db():
         conn.commit()
     if "send_resume_datetime" not in boss_cols:
         conn.execute("ALTER TABLE bosses ADD COLUMN send_resume_datetime INTEGER")
+        conn.commit()
+    # migration: add updated column to sync_logs
+    log_cols = [row[1] for row in conn.execute("PRAGMA table_info(sync_logs)").fetchall()]
+    if "updated" not in log_cols:
+        conn.execute("ALTER TABLE sync_logs ADD COLUMN updated INTEGER DEFAULT 0")
         conn.commit()
 
     conn.close()

@@ -59,7 +59,7 @@ async def sync_all():
                      message=f"获取到 {len(friends)} 个联系人",
                      total=len(friends), current=0)
 
-    stats = {"friends": 0, "new_messages": 0, "skipped_bosses": skipped_pre if sync_days > 0 else 0, "errors": []}
+    stats = {"friends": 0, "new_messages": 0, "updated_messages": 0, "skipped_bosses": skipped_pre if sync_days > 0 else 0, "errors": []}
 
     # Step 2: 遍历筛选后的联系人
     for idx, f in enumerate(friends):
@@ -139,6 +139,7 @@ async def sync_all():
 
             # 2c. 获取聊天记录（分页）
             new_count = 0
+            updated_count = 0
             total_msgs = 0
             page_num = 0
             try:
@@ -209,6 +210,8 @@ async def sync_all():
                             mid = msg.get("mid", 0)
                             if not mid:
                                 continue
+
+                            new_status = msg.get("status", 0)
                             conn.execute(
                                 """
                                 INSERT OR IGNORE INTO chat_messages
@@ -224,15 +227,25 @@ async def sync_all():
                                     body_content,
                                     msg.get("pushText", ""),
                                     side,
-                                    msg.get("status", 0),
+                                    new_status,
                                     msg_time,
                                     from_info.get("name", ""),
                                     to_info.get("name", ""),
                                 ),
                             )
-                            changed = conn.execute("SELECT changes()").fetchone()[0]
-                            if changed:
+                            if conn.execute("SELECT changes()").fetchone()[0]:
                                 new_count += 1
+                            else:
+                                # 消息已存在，检查 status 是否变化
+                                old_status = conn.execute(
+                                    "SELECT status FROM chat_messages WHERE id = ?", (mid,)
+                                ).fetchone()
+                                if old_status and old_status[0] != new_status:
+                                    conn.execute(
+                                        "UPDATE chat_messages SET status = ? WHERE id = ?",
+                                        (new_status, mid),
+                                    )
+                                    updated_count += 1
                         except Exception:
                             pass
 
@@ -245,6 +258,7 @@ async def sync_all():
                     await asyncio.sleep(0.2)
 
                 stats["new_messages"] += new_count
+                stats["updated_messages"] += updated_count
                 # 更新首次/末次聊天时间
                 if total_msgs > 0:
                     conn.execute(
@@ -279,13 +293,13 @@ async def sync_all():
 
     # 写同步日志
     conn.execute(
-        """INSERT INTO sync_logs (sync_days, friends, new_messages, skipped, errors)
-           VALUES (?, ?, ?, ?, ?)""",
-        (sync_days, stats["friends"], stats["new_messages"], stats["skipped_bosses"],
-         "; ".join(stats["errors"]) if stats["errors"] else ""),
+        """INSERT INTO sync_logs (sync_days, friends, new_messages, updated, skipped, errors)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (sync_days, stats["friends"], stats["new_messages"], stats["updated_messages"],
+         stats["skipped_bosses"], "; ".join(stats["errors"]) if stats["errors"] else ""),
     )
     conn.commit()
     conn.close()
 
-    logger.info(f"同步完成 — 联系人: {stats['friends']}, 新消息: {stats['new_messages']}, 跳过: {stats['skipped_bosses']}, 错误: {len(stats['errors'])}")
+    logger.info(f"同步完成 — 联系人: {stats['friends']}, 新消息: {stats['new_messages']}, 更新: {stats['updated_messages']}, 跳过: {stats['skipped_bosses']}, 错误: {len(stats['errors'])}")
     yield _event("done", **stats)

@@ -70,8 +70,9 @@
             <el-table-column label="范围" width="55">
               <template #default="{ row }">{{ row.sync_days ? row.sync_days + '天' : '全部' }}</template>
             </el-table-column>
-            <el-table-column prop="new_messages" label="新消息" width="60" align="center" />
-            <el-table-column prop="skipped" label="跳过" width="50" align="center" />
+            <el-table-column prop="new_messages" label="新" width="45" align="center" />
+            <el-table-column prop="updated" label="更新" width="45" align="center" />
+            <el-table-column prop="skipped" label="跳过" width="45" align="center" />
           </el-table>
           <el-empty v-else description="暂无数据" :image-size="60" />
         </el-card>
