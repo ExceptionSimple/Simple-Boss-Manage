@@ -85,40 +85,6 @@ npm run dev
 3. 点击「同步聊天记录」
 4. 在「投递列表」「消息提醒」「统计分析」各页面查看数据
 
-## 项目结构
-
-```
-Simple-Boss-Manage/
-├── backend/
-│   ├── main.py              # FastAPI 入口
-│   ├── database.py           # SQLite 初始化 & 迁移
-│   ├── routers/              # API 路由
-│   │   ├── bosses.py         # 投递列表 CRUD
-│   │   ├── cookie.py         # Cookie 管理 & 配置
-│   │   ├── messenger.py      # 消息发送
-│   │   ├── reminders.py      # 消息提醒
-│   │   ├── stats.py          # 统计分析
-│   │   └── sync.py           # 数据同步
-│   └── services/             # 业务逻辑
-│       ├── boss_api.py       # BOSS API 客户端
-│       ├── messenger.py      # Playwright 自动化
-│       ├── msg_generator.py  # AI 消息生成
-│       └── sync_service.py   # 同步编排
-├── frontend/
-│   ├── src/
-│   │   ├── views/            # 页面组件
-│   │   │   ├── Dashboard.vue
-│   │   │   ├── BossList.vue
-│   │   │   ├── BossDetail.vue
-│   │   │   ├── Reminders.vue
-│   │   │   ├── Stats.vue
-│   │   │   └── Settings.vue
-│   │   ├── router/
-│   │   └── api/
-│   └── public/
-└── data.db                   # SQLite 数据库
-```
-
 ## 致谢
 
 - [boss-cli](https://github.com/joohw/boss-cli) — BOSS 自动发送消息机制参考
