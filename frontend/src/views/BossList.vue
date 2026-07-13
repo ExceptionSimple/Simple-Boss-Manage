@@ -37,6 +37,9 @@
         批量发消息 ({{ selectedNames.length }})
       </el-button>
       <span v-if="selectedNames.length" style="font-size:13px;color:#999;">已选：{{ selectedNames.join(', ') }}</span>
+      <div style="margin-left:auto;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+        <el-checkbox v-for="col in columnDefs" :key="col.key" v-model="col.visible" :label="col.label" size="small" />
+      </div>
     </div>
 
     <el-dialog v-model="showBatchDialog" title="批量发送消息" width="500px">
@@ -60,30 +63,30 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column prop="brand_name" label="公司" min-width="120" />
-      <el-table-column prop="boss_title" label="职位" width="80" />
-      <el-table-column prop="job_name" label="岗位" min-width="160" show-overflow-tooltip />
-      <el-table-column label="城市" width="90">
+      <el-table-column prop="brand_name" label="公司" min-width="120" v-if="vis('brand_name')" />
+      <el-table-column prop="boss_title" label="职位" width="80" v-if="vis('boss_title')" />
+      <el-table-column prop="job_name" label="岗位" min-width="160" show-overflow-tooltip v-if="vis('job_name')" />
+      <el-table-column label="城市" width="90" v-if="vis('city')">
         <template #default="{ row }">{{ row.location_name || row.job_city }}</template>
       </el-table-column>
-      <el-table-column prop="salary_desc" label="薪资" width="110" />
-      <el-table-column prop="first_msg_time" label="首次联系" width="110" sortable="custom">
+      <el-table-column prop="salary_desc" label="薪资" width="110" v-if="vis('salary')" />
+      <el-table-column prop="first_msg_time" label="首次联系" width="110" sortable="custom" v-if="vis('first_msg_time')">
         <template #default="{ row }">{{ fmtDate(row.first_msg_time) }}</template>
       </el-table-column>
-      <el-table-column prop="last_msg_time" label="最近联系" width="110" sortable="custom">
+      <el-table-column prop="last_msg_time" label="最近联系" width="110" sortable="custom" v-if="vis('last_msg_time')">
         <template #default="{ row }">{{ fmtDate(row.last_msg_time) }}</template>
       </el-table-column>
-      <el-table-column label="面试" width="70" align="center">
+      <el-table-column label="面试" width="70" align="center" v-if="vis('interview')">
         <template #default="{ row }">
           <el-checkbox :model-value="!!row.has_interview" @change="toggle(row, 'has_interview')" />
         </template>
       </el-table-column>
-      <el-table-column label="简历" width="70" align="center">
+      <el-table-column label="简历" width="70" align="center" v-if="vis('resume')">
         <template #default="{ row }">
           <el-checkbox :model-value="!!row.is_resume_sent" @change="toggle(row, 'is_resume_sent')" />
         </template>
       </el-table-column>
-      <el-table-column label="笔试" width="70" align="center">
+      <el-table-column label="笔试" width="70" align="center" v-if="vis('test')">
         <template #default="{ row }">
           <el-checkbox :model-value="!!row.has_written_test" @change="toggle(row, 'has_written_test')" />
         </template>
@@ -124,6 +127,23 @@ const selectedNames = computed(() => selectedBosses.value.map(b => b.name))
 const showBatchDialog = ref(false)
 const batchMsg = ref('')
 const batchSending = ref(false)
+
+const columnDefs = reactive([
+  { key: 'brand_name', label: '公司', visible: true },
+  { key: 'boss_title', label: '职位', visible: false },
+  { key: 'job_name', label: '岗位', visible: true },
+  { key: 'salary', label: '薪资', visible: false },
+  { key: 'city', label: '城市', visible: true },
+  { key: 'first_msg_time', label: '首次联系', visible: false },
+  { key: 'last_msg_time', label: '最近联系', visible: true },
+  { key: 'interview', label: '面试', visible: true },
+  { key: 'resume', label: '简历', visible: true },
+  { key: 'test', label: '笔试', visible: true },
+])
+
+function vis(key) {
+  return columnDefs.find(c => c.key === key)?.visible ?? true
+}
 const filters = reactive({
   keyword: '', city: '', position: '',
   has_interview: null, is_resume_sent: null, has_written_test: null,

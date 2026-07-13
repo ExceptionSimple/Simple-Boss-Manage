@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="boss-detail-page">
     <el-button text @click="$router.push('/bosses')">← 返回列表</el-button>
 
     <el-card v-if="boss" style="margin-top:12px;" shadow="hover">
@@ -140,15 +140,38 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.boss-detail-page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 80px);
+  overflow: hidden;
+}
+.boss-detail-page > .el-button {
+  display: flex;
+  justify-content: left;
+  width: fit-content;
+}
 .chat-container {
-  background: #f0f2f5;
+  background: #fff;
   border-radius: 8px;
-  padding: 20px 16px;
+  margin-top: 10px;
+  padding: 24px 16px;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-height: 600px;
+  flex: 1;
   overflow-y: auto;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: #ccc transparent;
+}
+.chat-container::-webkit-scrollbar {
+  width: 4px;
+  background: transparent;
+}
+.chat-container::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 2px;
 }
 .chat-row { display: flex; }
 .chat-left { justify-content: flex-start; }
@@ -166,8 +189,10 @@ onMounted(async () => {
   vertical-align: top;
   word-break: break-all;
   white-space: pre-wrap;
+  text-align: left;
 }
 .chat-left .chat-bubble { border-top-left-radius: 0; }
+.chat-right .chat-msg { text-align: right; }
 .chat-right .chat-bubble { background-color: rgba(0, 190, 189, .2); border-top-right-radius: 0; }
 .chat-meta { display: flex; gap: 8px; margin-top: 4px; font-size: 11px; color: #999; padding: 0 4px; }
 .chat-right .chat-meta { justify-content: flex-end; }
