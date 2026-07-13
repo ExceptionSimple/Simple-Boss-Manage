@@ -64,6 +64,16 @@ def init_db():
 
         CREATE INDEX IF NOT EXISTS idx_messages_boss ON chat_messages(encrypt_boss_id);
         CREATE INDEX IF NOT EXISTS idx_messages_time ON chat_messages(time);
+
+        CREATE TABLE IF NOT EXISTS sync_logs (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            sync_time    TEXT DEFAULT (datetime('now', 'localtime')),
+            sync_days    INTEGER DEFAULT 0,
+            friends      INTEGER DEFAULT 0,
+            new_messages INTEGER DEFAULT 0,
+            skipped      INTEGER DEFAULT 0,
+            errors       TEXT
+        );
     """)
     conn.commit()
 

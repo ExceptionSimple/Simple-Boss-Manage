@@ -53,7 +53,8 @@ export const api = {
   verifyCookie: () => request('/cookie/verify'),
 
   // Sync
-  triggerSync: () => request('/sync', { method: 'POST' }),
+  triggerSync: () => fetch('/api/sync', { method: 'POST' }),
+  getSyncLogs: () => request('/sync/logs?limit=10'),
 
   // Bosses
   getBosses: (params = {}) => {

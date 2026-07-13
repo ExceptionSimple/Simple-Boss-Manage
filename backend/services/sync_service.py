@@ -44,13 +44,24 @@ async def sync_all():
         conn.close()
         return
 
-    total = len(friends)
-    mode = f"（仅 {sync_days} 天内）" if sync_days > 0 else ""
-    yield _event("progress", phase="friends", message=f"获取到 {total} 个联系人{mode}", total=total, current=0)
+    # 预筛选：根据 updateTime 过滤联系人数
+    skipped_pre = 0
+    if sync_days > 0:
+        active = [f for f in friends if f.get("updateTime", 0) >= cutoff]
+        skipped_pre = len(friends) - len(active)
+        logger.info(f"预筛选: {len(friends)} 个联系人 → {len(active)} 个在 {sync_days} 天内有活动")
+        yield _event("progress", phase="friends",
+                     message=f"获取到 {len(friends)} 个联系人，{len(active)} 个在 {sync_days} 天内有活动",
+                     total=len(active), current=0)
+        friends = active
+    else:
+        yield _event("progress", phase="friends",
+                     message=f"获取到 {len(friends)} 个联系人",
+                     total=len(friends), current=0)
 
-    stats = {"friends": 0, "new_messages": 0, "skipped_bosses": 0, "errors": []}
+    stats = {"friends": 0, "new_messages": 0, "skipped_bosses": skipped_pre if sync_days > 0 else 0, "errors": []}
 
-    # Step 2: 遍历每个联系人
+    # Step 2: 遍历筛选后的联系人
     for idx, f in enumerate(friends):
         name = f.get("name", "?")
         brand = f.get("brandName", "")
@@ -58,7 +69,7 @@ async def sync_all():
         encrypt_id = f["encryptFriendId"]
         current = idx + 1
         label = f"{name} · {brand} · {job}" if brand and job else name
-        yield _event("progress", phase="boss", message=f"[{current}/{total}] 正在同步: {label}", total=total, current=current, boss_name=label)
+        yield _event("progress", phase="boss", message=f"[{current}/{len(friends)}] 正在同步: {label}", total=len(friends), current=current, boss_name=label)
 
         try:
             # 2a. Upsert boss
@@ -248,6 +259,15 @@ async def sync_all():
             logger.error(f"同步 {name} 失败: {e}")
             stats["errors"].append(f"联系人 {name}: {e}")
 
+    conn.commit()
+
+    # 写同步日志
+    conn.execute(
+        """INSERT INTO sync_logs (sync_days, friends, new_messages, skipped, errors)
+           VALUES (?, ?, ?, ?, ?)""",
+        (sync_days, stats["friends"], stats["new_messages"], stats["skipped_bosses"],
+         "; ".join(stats["errors"]) if stats["errors"] else ""),
+    )
     conn.commit()
     conn.close()
 
