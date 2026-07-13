@@ -90,4 +90,6 @@ export const api = {
   getDailyStats: () => request('/stats/daily'),
   getRecentResumes: () => request('/stats/recent-resumes?limit=5'),
   getDashboardSyncLogs: () => request('/stats/sync-logs?limit=5'),
+  generateReport: (type) => request(`/reports/${type}`),
+  listReports: () => request('/reports/list'),
 }

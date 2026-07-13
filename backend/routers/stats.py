@@ -18,7 +18,7 @@ def _start_of_day(offset_days: int = 0) -> int:
 
 def _start_of_week(offset_weeks: int = 0) -> int:
     now = time.localtime()
-    wday = (now.tm_wday + 6) % 7
+    wday = now.tm_wday  # Python: tm_wday 0=Monday
     t = time.mktime((now.tm_year, now.tm_mon, now.tm_mday - wday - offset_weeks * 7, 0, 0, 0, 0, 0, now.tm_isdst))
     return int(t) * 1000
 

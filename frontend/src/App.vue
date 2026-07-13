@@ -21,6 +21,10 @@
           <el-icon><Bell /></el-icon>
           <span>消息提醒</span>
         </el-menu-item>
+        <el-menu-item index="/reports">
+          <el-icon><Document /></el-icon>
+          <span>生成报告</span>
+        </el-menu-item>
         <el-menu-item index="/stats">
           <el-icon><PieChart /></el-icon>
           <span>统计分析</span>
@@ -41,7 +45,7 @@
 
 <script setup>
 import { useRoute } from 'vue-router'
-import { DataBoard, List, PieChart, Setting, Bell } from '@element-plus/icons-vue'
+import { DataBoard, List, PieChart, Setting, Bell, Document } from '@element-plus/icons-vue'
 const route = useRoute()
 </script>
 
