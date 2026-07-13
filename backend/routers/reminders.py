@@ -14,7 +14,7 @@ def list_reminders(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
 ):
-    """列出待提醒的 BOSS：最近一条消息是我方发送且未读"""
+    """列出待提醒的 BOSS：最近一条消息是我方发送"""
     conn = get_db()
     offset = (page - 1) * size
 
@@ -27,7 +27,7 @@ def list_reminders(
             WHERE encrypt_boss_id = b.encrypt_boss_id
             ORDER BY time DESC LIMIT 1
         )
-        WHERE cm.side = 'right' AND cm.status != 2
+        WHERE cm.side = 'right'
     """).fetchone()
     total = total_row["cnt"] if total_row else 0
 
@@ -47,7 +47,7 @@ def list_reminders(
             WHERE encrypt_boss_id = b.encrypt_boss_id
             ORDER BY time DESC LIMIT 1
         )
-        WHERE cm.side = 'right' AND cm.status != 2
+        WHERE cm.side = 'right'
         ORDER BY unanswered_count DESC, cm.time DESC
         LIMIT ? OFFSET ?
     """, (size, offset)).fetchall()
