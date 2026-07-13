@@ -92,4 +92,5 @@ export const api = {
   getDashboardSyncLogs: () => request('/stats/sync-logs?limit=5'),
   generateReport: (type) => request(`/reports/${type}`),
   listReports: () => request('/reports/list'),
+  deleteReports: (names) => request('/reports/delete', { method: 'DELETE', body: JSON.stringify({ names }) }),
 }

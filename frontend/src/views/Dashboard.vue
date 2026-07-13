@@ -35,10 +35,10 @@
     <el-row :gutter="16" style="margin-top: 20px;">
       <el-col :span="8">
         <el-card shadow="hover">
-          <template #header><h3>聊天记录 TOP 3</h3></template>
+          <template #header><h3>聊天记录 TOP 5</h3></template>
           <div v-if="topChatters.length">
             <div v-for="(t, i) in topChatters" :key="i" class="top-item">
-              <span class="top-rank">{{ ['🥇','🥈','🥉'][i] }}</span>
+              <el-tag :type="['danger','warning','success','info',''][i]" size="small" class="rank-tag">{{ i + 1 }}</el-tag>
               <span class="top-name">{{ t.name }}</span>
               <span class="top-brand">{{ t.brand }}</span>
               <span class="top-cnt">{{ t.count }} 条</span>
@@ -157,7 +157,7 @@ onMounted(async () => {
 .down { color: #ef4444; font-size: 14px; margin-left: 4px; }
 .top-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #f5f5f5; }
 .top-item:last-child { border-bottom: none; }
-.top-rank { font-size: 18px; width: 28px; text-align: center; }
+.rank-tag { width: 24px; text-align: center; }
 .top-name { flex: 1; font-weight: 600; }
 .top-brand { color: #999; font-size: 13px; }
 .top-cnt { color: #10b981; font-weight: 600; font-size: 13px; }

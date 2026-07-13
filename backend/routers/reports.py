@@ -45,7 +45,8 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
 .rank-box h3 {{ font-size:16px; color:#374151; margin-bottom:12px; }}
 .rank-item {{ display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #f3f4f6; }}
 .rank-item:last-child {{ border:none; }}
-.rank-emoji {{ font-size:20px; }}
+.rank-badge {{ display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:4px; color:#fff; font-size:12px; font-weight:700; flex-shrink:0; }}
+.rank-1 {{ background:#f56c6c; }} .rank-2 {{ background:#e6a23c; }} .rank-3 {{ background:#67c23a; }} .rank-4 {{ background:#909399; }} .rank-5 {{ background:#909399; }}
 .rank-name {{ font-weight:600; }} .rank-brand {{ color:#9ca3af; font-size:13px; }}
 .rank-cnt {{ margin-left:auto; color:#10b981; font-weight:600; }}
 .footer {{ text-align:center; color:#d1d5db; font-size:12px; margin-top:30px; }}
@@ -71,14 +72,14 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
 
 <div class="rank-box">
   <h3>沟通最多</h3>
-  {''.join(f'<div class="rank-item"><span class="rank-emoji">{e}</span><span class="rank-name">{n}</span><span class="rank-brand">{b}</span><span class="rank-cnt">{c} 条</span></div>' for e,n,b,c in [(['🥇','🥈','🥉'][i] if i<3 else str(i+1), t["name"], t["brand"], t["count"]) for i,t in enumerate(top_chatters)])}
+  {''.join(f'<div class="rank-item"><span class="rank-badge rank-{i+1}">{i+1}</span><span class="rank-name">{t["name"]}</span><span class="rank-brand">{t["brand"]}</span><span class="rank-cnt">{t["count"]} 条</span></div>' for i,t in enumerate(top_chatters))}
 </div>
 
 <div class="footer">BOSS 管理 · {datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
 </div>
 <script>
 var d=echarts.init(document.getElementById('chart'));
-d.setOption({{tooltip:{{trigger:'axis'}},xAxis:{{type:'category',data:{daily_json}.map(i=>i.date),axisLabel:{{rotate:45,fontSize:10}}}},yAxis:{{type:'value',name:'消息数',minInterval:1}},series:[{{data:{daily_json}.map(i=>i.count),type:'bar',itemStyle:{{color:'#6366f1'}}}}],grid:{{left:45,bottom:70,right:15,top:10}}}});
+d.setOption({{title:{{text:'每日消息趋势',left:'center',textStyle:{{fontSize:14,color:'#374151'}}}},tooltip:{{trigger:'axis'}},xAxis:{{type:'category',data:{daily_json}.map(i=>i.date),axisLabel:{{rotate:45,fontSize:10}}}},yAxis:{{type:'value',name:'消息数',minInterval:1}},series:[{{data:{daily_json}.map(i=>i.count),type:'bar',itemStyle:{{color:'#6366f1'}}}}],grid:{{left:45,bottom:70,right:15,top:45}}}});
 </script>
 </body>
 </html>"""
@@ -97,7 +98,7 @@ def _calc_trend(curr, prev, label: str) -> tuple[str, str]:
     if prev == 0 and curr == 0:
         return "暂无", ""
     if prev == 0:
-        return f"较{label} 0", "up"
+        return f"较{label} +{curr}", "up"
     diff = curr - prev
     if diff > 0:
         return f"较{label} +{diff}", "up"
@@ -155,18 +156,18 @@ def _build_stats(period_start: int, period_end: int, prev_start: int, prev_end: 
 
 @router.get("/reports/weekly")
 def generate_weekly():
-    now = time.localtime()
-    end_of_today = int(time.mktime((now.tm_year, now.tm_mon, now.tm_mday, 23, 59, 59, 0, 0, now.tm_isdst))) * 1000
-    week_start = _start_of_week(0)
-    prev_week_start = _start_of_week(1)
-    prev_week_end = week_start - 1  # last Sunday 23:59:59.999
+    # 统计上周（完整周 Mon-Sun），与上上周对比
+    this_week_start = _start_of_week(0)
+    last_week_start = _start_of_week(1)
+    last_week_end = this_week_start - 1
+    prev2_week_start = _start_of_week(2)
 
-    stats = _build_stats(week_start, end_of_today, prev_week_start, prev_week_end, "上周")
-    daily = _daily_data(week_start, end_of_today)
-    d1 = datetime.fromtimestamp(week_start/1000).strftime('%m/%d')
-    d2 = datetime.fromtimestamp(end_of_today/1000).strftime('%m/%d')
+    stats = _build_stats(last_week_start, last_week_end, prev2_week_start, last_week_start - 1, "上周")
+    daily = _daily_data(last_week_start, last_week_end)
+    d1 = datetime.fromtimestamp(last_week_start/1000).strftime('%m/%d')
+    d2 = datetime.fromtimestamp(last_week_end/1000).strftime('%m/%d')
 
-    html = _build_html(f"📊 周报 {d1} - {d2}", f"{d1} - {d2}", "上周", stats, daily, stats["top"])
+    html = _build_html(f"周报 {d1} - {d2}", f"{d1} - {d2}", "上周", stats, daily, stats["top"])
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
     path = os.path.join(REPORTS_DIR, f"weekly_{ts}.html")
     with open(path, "w") as f:
@@ -174,25 +175,69 @@ def generate_weekly():
     return {"ok": True, "path": f"weekly_{ts}.html", "url": f"/api/reports/view/weekly_{ts}.html"}
 
 
-@router.get("/reports/monthly")
-def generate_monthly():
+@router.get("/reports/weekly-current")
+def generate_weekly_current():
+    # 统计本周（不完整），与上周对比
     now = time.localtime()
     end_of_today = int(time.mktime((now.tm_year, now.tm_mon, now.tm_mday, 23, 59, 59, 0, 0, now.tm_isdst))) * 1000
-    month_start = _start_of_month(0)
-    prev_month_start = _start_of_month(1)
-    prev_month_end = month_start - 1
+    this_week_start = _start_of_week(0)
+    last_week_start = _start_of_week(1)
+    last_week_end = this_week_start - 1
 
-    stats = _build_stats(month_start, end_of_today, prev_month_start, prev_month_end, "上月")
-    daily = _daily_data(month_start, end_of_today)
-    d1 = datetime.fromtimestamp(month_start/1000).strftime('%m/%d')
+    stats = _build_stats(this_week_start, end_of_today, last_week_start, last_week_end, "上周")
+    daily = _daily_data(this_week_start, end_of_today)
+    d1 = datetime.fromtimestamp(this_week_start/1000).strftime('%m/%d')
     d2 = datetime.fromtimestamp(end_of_today/1000).strftime('%m/%d')
 
-    html = _build_html(f"📊 月报 {d1} - {d2}", f"{d1} - {d2}", "上月", stats, daily, stats["top"])
+    html = _build_html(f"本周报 {d1} - {d2}", f"{d1} - {d2}", "上周", stats, daily, stats["top"])
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    path = os.path.join(REPORTS_DIR, f"weekly_cur_{ts}.html")
+    with open(path, "w") as f:
+        f.write(html)
+    return {"ok": True, "path": f"weekly_cur_{ts}.html", "url": f"/api/reports/view/weekly_cur_{ts}.html"}
+
+
+@router.get("/reports/monthly")
+def generate_monthly():
+    # 统计上月（完整月），与上上月对比
+    this_month_start = _start_of_month(0)
+    last_month_start = _start_of_month(1)
+    last_month_end = this_month_start - 1
+    prev2_month_start = _start_of_month(2)
+
+    stats = _build_stats(last_month_start, last_month_end, prev2_month_start, last_month_start - 1, "上月")
+    daily = _daily_data(last_month_start, last_month_end)
+    d1 = datetime.fromtimestamp(last_month_start/1000).strftime('%m/%d')
+    d2 = datetime.fromtimestamp(last_month_end/1000).strftime('%m/%d')
+
+    html = _build_html(f"月报 {d1} - {d2}", f"{d1} - {d2}", "上月", stats, daily, stats["top"])
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
     path = os.path.join(REPORTS_DIR, f"monthly_{ts}.html")
     with open(path, "w") as f:
         f.write(html)
     return {"ok": True, "path": f"monthly_{ts}.html", "url": f"/api/reports/view/monthly_{ts}.html"}
+
+
+@router.get("/reports/monthly-current")
+def generate_monthly_current():
+    # 统计本月（不完整），与上月对比
+    now = time.localtime()
+    end_of_today = int(time.mktime((now.tm_year, now.tm_mon, now.tm_mday, 23, 59, 59, 0, 0, now.tm_isdst))) * 1000
+    this_month_start = _start_of_month(0)
+    last_month_start = _start_of_month(1)
+    last_month_end = this_month_start - 1
+
+    stats = _build_stats(this_month_start, end_of_today, last_month_start, last_month_end, "上月")
+    daily = _daily_data(this_month_start, end_of_today)
+    d1 = datetime.fromtimestamp(this_month_start/1000).strftime('%m/%d')
+    d2 = datetime.fromtimestamp(end_of_today/1000).strftime('%m/%d')
+
+    html = _build_html(f"本月报 {d1} - {d2}", f"{d1} - {d2}", "上月", stats, daily, stats["top"])
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    path = os.path.join(REPORTS_DIR, f"monthly_cur_{ts}.html")
+    with open(path, "w") as f:
+        f.write(html)
+    return {"ok": True, "path": f"monthly_cur_{ts}.html", "url": f"/api/reports/view/monthly_cur_{ts}.html"}
 
 
 @router.get("/reports/list")
@@ -208,6 +253,18 @@ def list_reports():
         kind = "周报" if f.startswith("weekly") else "月报"
         results.append({"name": f, "type": kind, "time": t, "url": f"/api/reports/view/{f}"})
     return results
+
+
+@router.delete("/reports/delete")
+def delete_reports(body: dict):
+    names = body.get("names", [])
+    deleted = 0
+    for name in names:
+        path = os.path.join(REPORTS_DIR, name)
+        if os.path.exists(path):
+            os.remove(path)
+            deleted += 1
+    return {"ok": True, "deleted": deleted}
 
 
 @router.get("/reports/view/{filename}", response_class=HTMLResponse)

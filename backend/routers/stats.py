@@ -65,10 +65,10 @@ def overview():
     last_month_resume = conn.execute("SELECT COUNT(*) as cnt FROM bosses WHERE is_resume_sent = 1 AND last_msg_time >= ? AND last_msg_time < ?", (last_month_ms_start, month_ms)).fetchone()["cnt"]
 
     # Top 3
-    top3 = conn.execute("""
+    top5 = conn.execute("""
         SELECT b.name, b.brand_name, COUNT(cm.id) as cnt
         FROM bosses b JOIN chat_messages cm ON cm.encrypt_boss_id = b.encrypt_boss_id
-        GROUP BY b.encrypt_boss_id ORDER BY cnt DESC LIMIT 3
+        GROUP BY b.encrypt_boss_id ORDER BY cnt DESC LIMIT 5
     """).fetchall()
     conn.close()
     return {
@@ -82,7 +82,7 @@ def overview():
         "week_resume": {"value": week_resume, "prev": last_week_resume},
         "month": {"value": month_count, "prev": last_month_count},
         "month_resume": {"value": month_resume, "prev": last_month_resume},
-        "top_chatters": [{"name": r["name"], "brand": r["brand_name"], "count": r["cnt"]} for r in top3],
+        "top_chatters": [{"name": r["name"], "brand": r["brand_name"], "count": r["cnt"]} for r in top5],
     }
 
 
