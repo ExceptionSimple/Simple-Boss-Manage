@@ -32,6 +32,16 @@
       </el-col>
     </el-row>
 
+    <el-row :gutter="16" style="margin-top: 16px;">
+      <el-col :span="24">
+        <el-card shadow="hover">
+          <template #header><h3>本周每日发简历趋势</h3></template>
+          <VChart :option="weekResumeOption" autoresize v-if="weekResumeData.length" style="height:200px;" />
+          <el-empty v-else description="本周暂无数据" :image-size="60" />
+        </el-card>
+      </el-col>
+    </el-row>
+
     <el-row :gutter="16" style="margin-top: 20px;">
       <el-col :span="8">
         <el-card shadow="hover">
@@ -83,8 +93,15 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import VChart from 'vue-echarts'
+import { use } from 'echarts/core'
+import { LineChart } from 'echarts/charts'
+import { TitleComponent, TooltipComponent, GridComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
 import { api } from '../api'
+
+use([LineChart, TitleComponent, TooltipComponent, GridComponent, CanvasRenderer])
 
 const topCards = ref([
   { label: '投递公司', value: 0, icon: '📨', color: '#ecfdf5' },
@@ -107,6 +124,22 @@ const monthCards = ref([
 const topChatters = ref([])
 const recentResumes = ref([])
 const syncLogs = ref([])
+const weekResumeData = ref([])
+
+const weekResumeOption = computed(() => ({
+  tooltip: { trigger: 'axis' },
+  xAxis: { type: 'category', data: weekResumeData.value.map(d => d.date.slice(5)), axisLabel: { fontSize: 11 } },
+  yAxis: { type: 'value', minInterval: 1 },
+  series: [{
+    data: weekResumeData.value.map(d => d.count),
+    type: 'line',
+    smooth: false,
+    lineStyle: { color: '#f59e0b', width: 2 },
+    itemStyle: { color: '#f59e0b' },
+    areaStyle: { color: 'rgba(245, 158, 11, 0.1)' },
+  }],
+  grid: { left: 40, bottom: 30, right: 20, top: 10 },
+}))
 
 function trendIcon(t) { return t > 0 ? '↑' : t < 0 ? '↓' : '→' }
 function fmtDate(ts) { if (!ts) return '-'; return new Date(ts).toLocaleDateString('zh-CN') }
@@ -128,6 +161,14 @@ onMounted(async () => {
     topChatters.value = o.top_chatters || []
     recentResumes.value = await api.getRecentResumes()
     syncLogs.value = await api.getDashboardSyncLogs()
+    // 本周每日发简历趋势
+    const allResume = await api.getDailyResumeStats()
+    const now = new Date()
+    const wday = now.getDay() === 0 ? 6 : now.getDay() - 1  // Monday=0
+    const monday = new Date(now)
+    monday.setDate(now.getDate() - wday)
+    const mondayStr = monday.toISOString().slice(0, 10)
+    weekResumeData.value = allResume.filter(d => d.date >= mondayStr)
   } catch (e) { /* empty */ }
 })
 </script>

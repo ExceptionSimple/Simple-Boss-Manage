@@ -39,8 +39,8 @@ def overview():
     total_communications = conn.execute("SELECT COUNT(*) as cnt FROM bosses").fetchone()["cnt"]
     total_resume_sent = conn.execute("SELECT COUNT(*) as cnt FROM bosses WHERE is_resume_sent = 1").fetchone()["cnt"]
     total_interviews = conn.execute("SELECT COUNT(*) as cnt FROM bosses WHERE has_interview = 1").fetchone()["cnt"]
-    total_cities = conn.execute("SELECT COUNT(DISTINCT COALESCE(NULLIF(location_name,''), job_city)) as cnt FROM bosses").fetchone()["cnt"]
-    total_positions = conn.execute("SELECT COUNT(DISTINCT position_name) as cnt FROM bosses WHERE position_name != ''").fetchone()["cnt"]
+    total_cities = conn.execute("SELECT COUNT(DISTINCT COALESCE(NULLIF(b.location_name,''), j.city)) as cnt FROM bosses b LEFT JOIN job_info j ON b.job_id = j.id").fetchone()["cnt"]
+    total_positions = conn.execute("SELECT COUNT(DISTINCT j.position_name) as cnt FROM bosses b LEFT JOIN job_info j ON b.job_id = j.id WHERE j.position_name != ''").fetchone()["cnt"]
 
     # 今日 vs 昨天（有消息的 BOSS 数）
     today_ms = _start_of_day(0)
@@ -66,7 +66,7 @@ def overview():
 
     # Top 3
     top5 = conn.execute("""
-        SELECT b.name, b.brand_name, COUNT(cm.id) as cnt
+        SELECT b.name, b.company_name, COUNT(cm.id) as cnt
         FROM bosses b JOIN chat_messages cm ON cm.encrypt_boss_id = b.encrypt_boss_id
         GROUP BY b.encrypt_boss_id ORDER BY cnt DESC LIMIT 5
     """).fetchall()
@@ -82,7 +82,7 @@ def overview():
         "week_resume": {"value": week_resume, "prev": last_week_resume},
         "month": {"value": month_count, "prev": last_month_count},
         "month_resume": {"value": month_resume, "prev": last_month_resume},
-        "top_chatters": [{"name": r["name"], "brand": r["brand_name"], "count": r["cnt"]} for r in top5],
+        "top_chatters": [{"name": r["name"], "brand": r["company_name"], "count": r["cnt"]} for r in top5],
     }
 
 
@@ -91,9 +91,9 @@ def city_distribution():
     conn = get_db()
     rows = conn.execute(
         """
-        SELECT COALESCE(NULLIF(location_name,''), job_city) as city, COUNT(*) as count
-        FROM bosses
-        WHERE COALESCE(NULLIF(location_name,''), job_city) != ''
+        SELECT COALESCE(NULLIF(b.location_name,''), j.city) as city, COUNT(*) as count
+        FROM bosses b LEFT JOIN job_info j ON b.job_id = j.id
+        WHERE COALESCE(NULLIF(b.location_name,''), j.city) != ''
         GROUP BY city
         ORDER BY count DESC
         """
@@ -119,18 +119,36 @@ def daily_stats():
     return [{"date": r["date"], "count": r["count"]} for r in rows]
 
 
+@router.get("/stats/daily-resume")
+def daily_resume_stats():
+    """按天统计发送简历数量"""
+    conn = get_db()
+    rows = conn.execute(
+        """
+        SELECT DATE(send_resume_datetime / 1000, 'unixepoch') as date, COUNT(*) as count
+        FROM bosses
+        WHERE is_resume_sent = 1 AND send_resume_datetime IS NOT NULL AND send_resume_datetime > 0
+        GROUP BY date
+        ORDER BY date
+        """
+    ).fetchall()
+    conn.close()
+    return [{"date": r["date"], "count": r["count"]} for r in rows]
+
+
 @router.get("/stats/recent-resumes")
 def recent_resumes(limit: int = 5):
     """最近发简历的前 N 家公司"""
     conn = get_db()
     rows = conn.execute(
-        """SELECT name, brand_name, job_name, send_resume_datetime
-           FROM bosses WHERE is_resume_sent = 1 AND send_resume_datetime IS NOT NULL
-           ORDER BY send_resume_datetime DESC LIMIT ?""",
+        """SELECT b.name, b.company_name, j.name as job_name, b.send_resume_datetime
+           FROM bosses b LEFT JOIN job_info j ON b.job_id = j.id
+           WHERE b.is_resume_sent = 1 AND b.send_resume_datetime IS NOT NULL
+           ORDER BY b.send_resume_datetime DESC LIMIT ?""",
         (limit,),
     ).fetchall()
     conn.close()
-    return [{"name": r["name"], "brand": r["brand_name"], "job": r["job_name"], "datetime": r["send_resume_datetime"]} for r in rows]
+    return [{"name": r["name"], "brand": r["company_name"], "job": r["job_name"], "datetime": r["send_resume_datetime"]} for r in rows]
 
 
 @router.get("/stats/sync-logs")
@@ -148,10 +166,10 @@ def position_distribution():
     conn = get_db()
     rows = conn.execute(
         """
-        SELECT position_name as name, COUNT(*) as count
-        FROM bosses
-        WHERE position_name != ''
-        GROUP BY position_name
+        SELECT j.position_name as name, COUNT(*) as count
+        FROM bosses b LEFT JOIN job_info j ON b.job_id = j.id
+        WHERE j.position_name != ''
+        GROUP BY j.position_name
         ORDER BY count DESC
         """
     ).fetchall()
