@@ -104,11 +104,12 @@ import { api } from '../api'
 use([LineChart, TitleComponent, TooltipComponent, GridComponent, CanvasRenderer])
 
 const topCards = ref([
-  { label: '投递公司', value: 0, icon: '📨', color: '#ecfdf5' },
-  { label: '沟通次数', value: 0, icon: '💬', color: '#eff6ff' },
-  { label: '约面次数', value: 0, icon: '🤝', color: '#fefce8' },
-  { label: '覆盖城市', value: 0, icon: '🏙️', color: '#fdf2f8' },
-  { label: '职位方向', value: 0, icon: '🎯', color: '#f5f3ff' },
+  { label: '沟通人数', value: 0, icon: '👥', color: '#ecfdf5' },
+  { label: '消息总数', value: 0, icon: '💬', color: '#eff6ff' },
+  { label: '发简历数', value: 0, icon: '📨', color: '#fefce8' },
+  { label: '约面次数', value: 0, icon: '🤝', color: '#fdf2f8' },
+  { label: '覆盖城市', value: 0, icon: '🏙️', color: '#f5f3ff' },
+  { label: '职位方向', value: 0, icon: '🎯', color: '#eef2ff' },
 ])
 
 const subCards = ref([
@@ -147,11 +148,12 @@ function fmtDate(ts) { if (!ts) return '-'; return new Date(ts).toLocaleDateStri
 onMounted(async () => {
   try {
     const o = await api.getOverview()
-    topCards.value[0].value = o.total_resume_sent || 0
-    topCards.value[1].value = o.total_communications || 0
-    topCards.value[2].value = o.total_interviews || 0
-    topCards.value[3].value = o.total_cities || 0
-    topCards.value[4].value = o.total_positions || 0
+    topCards.value[0].value = o.total_communications || 0
+    topCards.value[1].value = o.total_messages || 0
+    topCards.value[2].value = o.total_resume_sent || 0
+    topCards.value[3].value = o.total_interviews || 0
+    topCards.value[4].value = o.total_cities || 0
+    topCards.value[5].value = o.total_positions || 0
 
     subCards.value[0].value = o.today.value; subCards.value[0].prev = o.today.prev; subCards.value[0].trend = o.today.value - o.today.prev
     subCards.value[1].value = o.week.value; subCards.value[1].prev = o.week.prev; subCards.value[1].trend = o.week.value - o.week.prev

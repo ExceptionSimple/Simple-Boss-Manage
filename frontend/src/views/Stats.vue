@@ -7,7 +7,7 @@
         <el-card shadow="hover">
           <template #header>
             <div style="display:flex;align-items:center;justify-content:space-between;">
-              <h3>每日沟通次数</h3>
+              <h3>每日沟通人数</h3>
               <div style="display:flex;gap:12px;">
                 <el-date-picker v-model="selectedMonth" type="month" placeholder="选择月份" format="YYYY-MM" value-format="YYYY-MM" @change="onFilterChange" />
                 <el-select v-model="selectedWeek" placeholder="周" style="width:120px;" @change="onFilterChange">
@@ -112,7 +112,7 @@ const filteredDaily = computed(() => {
 const dailyOption = computed(() => ({
   tooltip: { trigger: 'axis' },
   xAxis: { type: 'category', data: filteredDaily.value.map(d => d.date), axisLabel: { rotate: 45, fontSize: 10 } },
-  yAxis: { type: 'value', name: '消息数', minInterval: 1 },
+  yAxis: { type: 'value', name: '人数', minInterval: 1 },
   series: [{ data: filteredDaily.value.map(d => d.count), type: 'bar', itemStyle: { color: '#10b981' } }],
   grid: { left: 50, bottom: 80, right: 20, top: 10 },
 }))

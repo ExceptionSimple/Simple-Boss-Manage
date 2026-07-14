@@ -63,7 +63,7 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column prop="brand_name" label="公司" min-width="120" v-if="vis('brand_name')" />
+      <el-table-column prop="company_name" label="公司" min-width="120" v-if="vis('company_name')" />
       <el-table-column prop="boss_title" label="职位" width="80" v-if="vis('boss_title')" />
       <el-table-column prop="job_name" label="岗位" min-width="160" show-overflow-tooltip v-if="vis('job_name')" />
       <el-table-column label="城市" width="90" v-if="vis('city')">
@@ -143,7 +143,7 @@ const batchMsg = ref('')
 const batchSending = ref(false)
 
 const columnDefs = reactive([
-  { key: 'brand_name', label: '公司', visible: true },
+  { key: 'company_name', label: '公司', visible: true },
   { key: 'boss_title', label: '职位', visible: false },
   { key: 'job_name', label: '岗位', visible: true },
   { key: 'salary', label: '薪资', visible: false },

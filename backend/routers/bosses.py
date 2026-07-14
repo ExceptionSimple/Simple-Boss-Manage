@@ -25,13 +25,13 @@ def list_bosses(
     params = []
 
     if city:
-        where.append("(job_city LIKE ? OR location_name LIKE ?)")
+        where.append("(j.city LIKE ? OR b.location_name LIKE ?)")
         params.extend([f"%{city}%", f"%{city}%"])
     if position:
-        where.append("position_name LIKE ?")
+        where.append("j.position_name LIKE ?")
         params.append(f"%{position}%")
     if keyword:
-        where.append("(brand_name LIKE ? OR job_name LIKE ?)")
+        where.append("(b.company_name LIKE ? OR j.name LIKE ?)")
         params.extend([f"%{keyword}%", f"%{keyword}%"])
     if has_interview is not None:
         where.append("has_interview = ?")
@@ -46,17 +46,24 @@ def list_bosses(
     where_clause = ("WHERE " + " AND ".join(where)) if where else ""
 
     sort_col = sort_by if sort_by in ALLOWED_SORTS else "last_msg_time"
+    sort_col = f"b.{sort_col}"  # fully qualified
     direction = "DESC" if order.lower() == "desc" else "ASC"
 
     offset = (page - 1) * size
 
+    join_clause = "LEFT JOIN job_info j ON b.job_id = j.id"
+
     total_row = conn.execute(
-        f"SELECT COUNT(*) as cnt FROM bosses {where_clause}", params
+        f"SELECT COUNT(*) as cnt FROM bosses b {join_clause} {where_clause}", params
     ).fetchone()
     total = total_row["cnt"]
 
     rows = conn.execute(
-        f"SELECT * FROM bosses {where_clause} ORDER BY {sort_col} {direction} LIMIT ? OFFSET ?",
+        f"""SELECT b.*, j.name as job_name, j.city as job_city, j.salary_desc,
+                   j.position_name, j.job_type_desc, j.detail as job_detail,
+                   j.company_url
+            FROM bosses b {join_clause} {where_clause}
+            ORDER BY {sort_col} {direction} LIMIT ? OFFSET ?""",
         params + [size, offset],
     ).fetchall()
 
@@ -73,7 +80,11 @@ def list_bosses(
 def boss_detail(encrypt_boss_id: str):
     conn = get_db()
     boss = conn.execute(
-        "SELECT * FROM bosses WHERE encrypt_boss_id = ?", (encrypt_boss_id,)
+        """SELECT b.*, j.name as job_name, j.city as job_city, j.salary_desc,
+                  j.position_name, j.job_type_desc, j.detail as job_detail,
+                  j.company_url
+           FROM bosses b LEFT JOIN job_info j ON b.job_id = j.id
+           WHERE b.encrypt_boss_id = ?""", (encrypt_boss_id,)
     ).fetchone()
     conn.close()
     if not boss:

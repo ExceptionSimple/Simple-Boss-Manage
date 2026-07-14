@@ -56,7 +56,7 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column prop="brand_name" label="公司" width="170" show-overflow-tooltip />
+      <el-table-column prop="company_name" label="公司" width="170" show-overflow-tooltip />
       <el-table-column prop="job_name" label="岗位" width="125" show-overflow-tooltip />
       <el-table-column label="城市" width="90">
         <template #default="{ row }">{{ row.location_name || row.job_city }}</template>

@@ -110,7 +110,7 @@ def _calc_trend(curr, prev, label: str) -> tuple[str, str]:
 def _daily_data(start_ms: int, end_ms: int) -> list:
     conn = get_db()
     rows = conn.execute(
-        """SELECT DATE(time/1000,'unixepoch') as date, COUNT(*) as cnt
+        """SELECT DATE(time/1000,'unixepoch','localtime') as date, COUNT(*) as cnt
            FROM chat_messages WHERE time >= ? AND time < ? GROUP BY date ORDER BY date""",
         (start_ms, end_ms),
     ).fetchall()
@@ -136,7 +136,7 @@ def _build_stats(period_start: int, period_end: int, prev_start: int, prev_end: 
     prev_interviews = conn.execute(
         "SELECT COUNT(*) FROM bosses WHERE has_interview=1 AND first_msg_time >= ? AND first_msg_time < ?",
         (prev_start, prev_end)).fetchone()[0]
-    top = conn.execute("""SELECT b.name, b.brand_name, COUNT(cm.id) as cnt FROM bosses b JOIN chat_messages cm ON cm.encrypt_boss_id=b.encrypt_boss_id WHERE cm.time>=? AND cm.time<? GROUP BY b.encrypt_boss_id ORDER BY cnt DESC LIMIT 5""", (period_start, period_end)).fetchall()
+    top = conn.execute("""SELECT b.name, b.company_name, COUNT(cm.id) as cnt FROM bosses b JOIN chat_messages cm ON cm.encrypt_boss_id=b.encrypt_boss_id WHERE cm.time>=? AND cm.time<? GROUP BY b.encrypt_boss_id ORDER BY cnt DESC LIMIT 5""", (period_start, period_end)).fetchall()
     conn.close()
 
     t_talked, t_cls = _calc_trend(cur_talked, prev_talked, prev_label)
@@ -150,7 +150,7 @@ def _build_stats(period_start: int, period_end: int, prev_start: int, prev_end: 
         "trend_msg": t_msg, "trend_msg_cls": m_cls,
         "trend_resume": t_res, "trend_resume_cls": r_cls,
         "trend_interview": t_intv, "trend_interview_cls": i_cls,
-        "top": [{"name": r["name"], "brand": r["brand_name"] or "", "count": r["cnt"]} for r in top],
+        "top": [{"name": r["name"], "brand": r["company_name"] or "", "count": r["cnt"]} for r in top],
     }
 
 

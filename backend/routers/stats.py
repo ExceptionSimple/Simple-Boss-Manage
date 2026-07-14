@@ -37,6 +37,7 @@ def _start_of_month(offset_months: int = 0) -> int:
 def overview():
     conn = get_db()
     total_communications = conn.execute("SELECT COUNT(*) as cnt FROM bosses").fetchone()["cnt"]
+    total_messages = conn.execute("SELECT COUNT(*) as cnt FROM chat_messages").fetchone()["cnt"]
     total_resume_sent = conn.execute("SELECT COUNT(*) as cnt FROM bosses WHERE is_resume_sent = 1").fetchone()["cnt"]
     total_interviews = conn.execute("SELECT COUNT(*) as cnt FROM bosses WHERE has_interview = 1").fetchone()["cnt"]
     total_cities = conn.execute("SELECT COUNT(DISTINCT COALESCE(NULLIF(b.location_name,''), j.city)) as cnt FROM bosses b LEFT JOIN job_info j ON b.job_id = j.id").fetchone()["cnt"]
@@ -73,6 +74,7 @@ def overview():
     conn.close()
     return {
         "total_communications": total_communications,
+        "total_messages": total_messages,
         "total_resume_sent": total_resume_sent,
         "total_interviews": total_interviews,
         "total_cities": total_cities,
@@ -104,11 +106,11 @@ def city_distribution():
 
 @router.get("/stats/daily")
 def daily_stats():
-    """按天统计消息数量"""
+    """按天统计沟通的 BOSS 数量（BOSS 时间戳为本地时间，需用 localtime）"""
     conn = get_db()
     rows = conn.execute(
         """
-        SELECT DATE(time / 1000, 'unixepoch') as date, COUNT(*) as count
+        SELECT DATE(time / 1000, 'unixepoch', 'localtime') as date, COUNT(DISTINCT encrypt_boss_id) as count
         FROM chat_messages
         WHERE time > 0
         GROUP BY date
@@ -125,7 +127,7 @@ def daily_resume_stats():
     conn = get_db()
     rows = conn.execute(
         """
-        SELECT DATE(send_resume_datetime / 1000, 'unixepoch') as date, COUNT(*) as count
+        SELECT DATE(send_resume_datetime / 1000, 'unixepoch', 'localtime') as date, COUNT(*) as count
         FROM bosses
         WHERE is_resume_sent = 1 AND send_resume_datetime IS NOT NULL AND send_resume_datetime > 0
         GROUP BY date

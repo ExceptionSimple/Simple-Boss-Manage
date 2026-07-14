@@ -7,7 +7,7 @@
         <el-avatar v-if="boss.avatar_url" :src="avatarSrc(boss.avatar_url)" :size="56" />
         <div>
           <h2>{{ boss.name }}</h2>
-          <p>{{ boss.brand_name }} · {{ boss.job_name }}</p>
+          <p>{{ boss.company_name }} · {{ boss.job_name }}</p>
           <p style="font-size:13px;color:#999;margin-top:4px;">
             {{ boss.location_name || boss.job_city }}
             <template v-if="boss.salary_desc"> · {{ boss.salary_desc }}</template>
