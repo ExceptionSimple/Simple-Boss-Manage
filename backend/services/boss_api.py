@@ -1,6 +1,6 @@
 import base64
-import os
 import logging
+import os
 import httpx
 from ..database import get_db
 
@@ -62,11 +62,23 @@ async def fetch_job_data(encrypt_boss_id: str) -> dict:
         if data.get("code") != 0:
             raise RuntimeError(f"获取岗位信息失败: {data.get('message')}")
         zp = data["zpData"]
+        job = zp["job"]
+        zp_data = zp.get("data", {}) or {}
+        # encryptJobId 可能在 job / zpData 顶层 / zpData.data 中
+        encrypt_job_id = (
+            job.get("encryptJobId", "") or
+            zp.get("encryptJobId", "") or
+            zp_data.get("encryptJobId", "")
+        )
+        if not encrypt_job_id:
+            logger.warning(f"未找到 encryptJobId (boss={encrypt_boss_id}), job keys: {list(job.keys())}, zpData keys: {list(zp.keys())}, data keys: {list(zp_data.keys())}")
         return {
-            "job": zp["job"],
-            "title": zp.get("data", {}).get("title", ""),
-            "tinyUrl": zp.get("data", {}).get("tinyUrl", ""),
-            "securityId": zp.get("data", {}).get("securityId", ""),
+            "job": job,
+            "encryptJobId": encrypt_job_id,
+            "companyName": zp_data.get("companyName", ""),
+            "title": zp_data.get("title", ""),
+            "tinyUrl": zp_data.get("tinyUrl", ""),
+            "securityId": zp_data.get("securityId", ""),
         }
 
 

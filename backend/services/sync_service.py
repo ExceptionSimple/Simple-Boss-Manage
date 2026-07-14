@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import re
 import time
 from pathlib import Path
@@ -80,52 +81,89 @@ async def sync_all():
                 """,
                 (encrypt_id, f["friendId"], name, f.get("updateTime", 0)),
             )
+            # Update boss with fields we have from friend list
             conn.execute(
                 """
                 UPDATE bosses SET
-                    brand_name = ?, job_name = ?, position_name = ?, job_city = ?,
-                    location_name = ?, job_type_desc = ?, update_time = MAX(update_time, ?),
+                    location_name = COALESCE(NULLIF(bosses.location_name, ''), ?),
+                    update_time = MAX(update_time, ?),
                     updated_at = datetime('now', 'localtime')
                 WHERE encrypt_boss_id = ?
                 """,
                 (
-                    f.get("brandName", ""),
-                    f.get("jobName", ""),
-                    f.get("positionName", ""),
-                    f.get("jobCity", ""),
                     "",
-                    f.get("jobTypeDesc", ""),
                     f.get("updateTime", 0),
                     encrypt_id,
                 ),
             )
 
-            # 2b. 获取岗位信息 + 下载头像（顺便拿 securityId，避免重复请求）
+            # 2b. 获取岗位信息 (encryptJobId, boss_title, location, salary, interview, securityId)
             friend_id = f["friendId"]
             security_id = ""
+            encrypt_job_id = ""
             try:
                 result = await boss_api.fetch_job_data(encrypt_id)
                 job = result["job"]
+                encrypt_job_id = result.get("encryptJobId", "")
+                if not encrypt_job_id:
+                    logger.warning(f"encryptJobId 为空 ({name})，跳过 job_info 写入")
                 tiny_url = result["tinyUrl"]
                 security_id = result.get("securityId", "")
                 if not security_id:
                     logger.warning(f"未获取到 {name} 的 securityId，无法拉取聊天记录")
+
+                # Check if we have a job_id already
+                existing_job_id_row = conn.execute(
+                    "SELECT job_id FROM bosses WHERE encrypt_boss_id = ?",
+                    (encrypt_id,),
+                ).fetchone()
+                had_job_id = existing_job_id_row and existing_job_id_row["job_id"]
+
                 conn.execute(
                     """
                     UPDATE bosses SET
-                        boss_title = ?, location_name = ?, salary_desc = ?,
+                        boss_title = ?, location_name = COALESCE(NULLIF(bosses.location_name, ''), ?),
                         has_interview = CASE WHEN ? = 1 THEN 1 ELSE has_interview END,
+                        job_id = COALESCE(NULLIF(bosses.job_id, ''), ?),
                         updated_at = datetime('now', 'localtime')
                     WHERE encrypt_boss_id = ?
                     """,
                     (
                         result.get("title", ""),
                         job.get("locationName", ""),
-                        job.get("salaryDesc", ""),
                         1 if job.get("hasInterview") else 0,
+                        encrypt_job_id,
                         encrypt_id,
                     ),
                 )
+
+                # 用 API 返回的 companyName 更新 bosses（优先保留已从 HTML 获取的全名）
+                api_company_name = result.get("companyName", "")
+                if api_company_name:
+                    conn.execute(
+                        "UPDATE bosses SET company_name = COALESCE(NULLIF(bosses.company_name, ''), ?), updated_at = datetime('now', 'localtime') WHERE encrypt_boss_id = ?",
+                        (api_company_name, encrypt_id),
+                    )
+
+                # UPSERT job_info with fields from friend list + job data
+                if encrypt_job_id:
+                    logger.info(f"写入 job_info: id={encrypt_job_id}, name={f.get('jobName', '')}")
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO job_info (id, name, city, salary_desc, job_type_desc, position_name, company_name, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
+                        """,
+                        (
+                            encrypt_job_id,
+                            f.get("jobName", ""),
+                            f.get("jobCity", ""),
+                            job.get("salaryDesc", ""),
+                            f.get("jobTypeDesc", ""),
+                            f.get("positionName", ""),
+                            api_company_name,
+                        ),
+                    )
+
                 # 下载头像
                 if tiny_url:
                     avatar_filename = await boss_api.download_avatar(tiny_url, friend_id, AVATAR_DIR)
@@ -255,7 +293,7 @@ async def sync_all():
                     if not result["hasMore"]:
                         break
                     max_msg_id = result["minMsgId"]
-                    await asyncio.sleep(0.2)
+                    await asyncio.sleep(random.uniform(0.3, 0.8))
 
                 stats["new_messages"] += new_count
                 stats["updated_messages"] += updated_count
@@ -283,7 +321,13 @@ async def sync_all():
             stats["friends"] += 1
             yield _event("boss_done", boss_name=label, new_messages=new_count)
 
-            await asyncio.sleep(0.3)
+            # 随机间隔 0.5~1 秒，每 10 个 BOSS 休息 2~4 秒
+            delay = random.uniform(0.5, 1.0)
+            if current > 0 and current % 10 == 0:
+                rest = random.uniform(2.0, 4.0)
+                logger.info(f"已完成 {current}/{len(friends)}，休息 {rest:.1f}s 防止限流")
+                delay = rest
+            await asyncio.sleep(delay)
 
         except Exception as e:
             logger.error(f"同步 {name} 失败: {e}")

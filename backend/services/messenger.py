@@ -162,10 +162,13 @@ async def _ensure_list_page(page: Page):
 async def _find_and_click(page: Page, boss_name: str, skip_nav: bool = False) -> bool:
     if not skip_nav:
         await _ensure_list_page(page)
-    await page.wait_for_selector(".chat-content .friend-content", timeout=15000)
+    await page.wait_for_selector(".chat-content", timeout=15000)
     await _sleep(500, 1000)
 
-    for _ in range(40):
+    stuck_count = 0
+
+    for _ in range(80):
+        # 搜索当前视口内所有已渲染的列表项
         found = await page.evaluate("""(name) => {
             const items = document.querySelectorAll(".chat-content .friend-content");
             for (const item of items) {
@@ -181,12 +184,40 @@ async def _find_and_click(page: Page, boss_name: str, skip_nav: bool = False) ->
         if found:
             await _sleep(*CHAT_OPEN_WAIT)
             return True
-        prev = await page.evaluate("document.querySelector('.chat-content')?.scrollTop || 0")
+
+        # 记录滚动前状态
+        prev_scroll = await page.evaluate(
+            "document.querySelector('.chat-content')?.scrollTop || 0"
+        )
+        prev_count = await page.evaluate(
+            "document.querySelectorAll('.chat-content .friend-content').length"
+        )
+
+        # 滚动一屏
         await page.evaluate("document.querySelector('.chat-content')?.scrollBy(0, 600)")
         await _sleep(*SCROLL_WAIT)
-        curr = await page.evaluate("document.querySelector('.chat-content')?.scrollTop || 0")
-        if curr == prev:
-            break
+
+        # 等待新节点渲染（最多等 1s）
+        for _ in range(5):
+            await _sleep(100, 200)
+            curr_count = await page.evaluate(
+                "document.querySelectorAll('.chat-content .friend-content').length"
+            )
+            if curr_count > prev_count:
+                break
+
+        curr_scroll = await page.evaluate(
+            "document.querySelector('.chat-content')?.scrollTop || 0"
+        )
+
+        # 滚动位置和节点数都不变 → 到底了
+        if curr_scroll == prev_scroll and curr_count == prev_count:
+            stuck_count += 1
+            if stuck_count >= 2:
+                break
+        else:
+            stuck_count = 0
+
     return False
 
 
@@ -194,7 +225,7 @@ async def _back_to_list(page: Page):
     """从聊天详情页返回列表页"""
     await page.evaluate("document.querySelector('.chat-header-back')?.click()")
     await _sleep(300, 600)
-    await page.wait_for_selector(".chat-content .friend-content", timeout=10000)
+    await page.wait_for_selector(".chat-content", timeout=10000)
 
 
 async def _type_message(page: Page, message: str):

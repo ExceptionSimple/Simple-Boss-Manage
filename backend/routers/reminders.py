@@ -34,6 +34,8 @@ def list_reminders(
 
     rows = conn.execute("""
         SELECT b.*,
+            j.name as job_name, j.city as job_city, j.salary_desc,
+            j.position_name, j.job_type_desc,
             cm.push_text AS last_msg_text,
             cm.status AS last_msg_status,
             cm.time AS last_msg_time,
@@ -43,6 +45,7 @@ def list_reminders(
                  (SELECT MAX(time) FROM chat_messages WHERE encrypt_boss_id = b.encrypt_boss_id AND side = 'left'), 0)
             ) AS unanswered_count
         FROM bosses b
+        LEFT JOIN job_info j ON b.job_id = j.id
         INNER JOIN chat_messages cm ON cm.id = (
             SELECT id FROM chat_messages
             WHERE encrypt_boss_id = b.encrypt_boss_id
