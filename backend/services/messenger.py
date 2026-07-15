@@ -159,7 +159,8 @@ async def _ensure_list_page(page: Page):
     await page.goto(GEEK_CHAT_URL, wait_until="domcontentloaded")
 
 
-async def _find_and_click(page: Page, boss_name: str, skip_nav: bool = False) -> bool:
+async def _find_and_click(page: Page, boss_name: str, skip_nav: bool = False,
+                        company_name: str = "", boss_title: str = "") -> bool:
     if not skip_nav:
         await _ensure_list_page(page)
     await page.wait_for_selector(".chat-content", timeout=15000)
@@ -168,19 +169,36 @@ async def _find_and_click(page: Page, boss_name: str, skip_nav: bool = False) ->
     stuck_count = 0
 
     for _ in range(80):
-        # 搜索当前视口内所有已渲染的列表项
-        found = await page.evaluate("""(name) => {
+        # 搜索当前视口内所有已渲染的列表项，同时匹配姓名+公司+职位
+        found = await page.evaluate("""(opts) => {
             const items = document.querySelectorAll(".chat-content .friend-content");
             for (const item of items) {
-                const el = item.querySelector(".title-box .name-box .name-text");
-                if (el && el.textContent.trim() === name) {
+                const nameBox = item.querySelector(".title-box .name-box");
+                if (!nameBox) continue;
+                const nameEl = nameBox.querySelector(".name-text");
+                const name = nameEl ? nameEl.textContent.trim() : "";
+                // 收集 name-box 下所有 span 文本（跳过 name-text 和空内容）
+                const spans = [];
+                nameBox.querySelectorAll("span").forEach(s => {
+                    if (!s.classList.contains("name-text")) {
+                        const t = s.textContent.trim();
+                        if (t) spans.push(t);
+                    }
+                });
+                const company = spans[0] || "";
+                const title = spans[1] || "";
+                // 匹配：姓名必须一致，公司/职位如提供则也需一致
+                let match = name === opts.name;
+                if (match && opts.company) match = company === opts.company;
+                if (match && opts.title) match = title === opts.title;
+                if (match) {
                     item.scrollIntoView({ block: "center" });
                     item.click();
                     return true;
                 }
             }
             return false;
-        }""", boss_name)
+        }""", {"name": boss_name, "company": company_name, "title": boss_title})
         if found:
             await _sleep(*CHAT_OPEN_WAIT)
             return True
@@ -438,10 +456,10 @@ async def import_cookies_from_json(raw: list[dict]) -> dict:
     return {"ok": True, "count": len(normalized)}
 
 
-async def send_to_boss(boss_name: str, message: str) -> dict:
+async def send_to_boss(boss_name: str, message: str, company_name: str = "", boss_title: str = "") -> dict:
     try:
         p, browser, ctx, page = await _launch()
-        if not await _find_and_click(page, boss_name):
+        if not await _find_and_click(page, boss_name, company_name=company_name, boss_title=boss_title):
             result = {"success": False, "error": f"未在聊天列表中找到 {boss_name}"}
             _record_failed(boss_name, message, result["error"])
             return result
@@ -466,8 +484,11 @@ async def send_batch_items(items: list[dict]) -> dict:
         for idx, item in enumerate(items):
             name = item["name"]
             msg = item["message"]
+            company = item.get("company_name", "")
+            title = item.get("boss_title", "")
             try:
-                if not await _find_and_click(page, name, skip_nav=True):
+                if not await _find_and_click(page, name, skip_nav=True,
+                                            company_name=company, boss_title=title):
                     results.append({"name": name, "success": False, "error": "未找到"})
                     continue
                 result = await _send_one(page, name, msg)

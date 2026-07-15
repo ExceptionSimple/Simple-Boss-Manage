@@ -111,7 +111,7 @@ async def send_reminders(body: SendBody):
         boss = conn.execute("SELECT name, boss_title FROM bosses WHERE encrypt_boss_id = ?", (eid,)).fetchone()
         if boss:
             msg = await generate_message(name=boss["name"] or "", boss_title=boss["boss_title"] or "", scheme_index=body.scheme_index)
-            names.append({"name": boss["name"], "message": msg})
+            names.append({"name": boss["name"], "message": msg, "company_name": boss.get("company_name", ""), "boss_title": boss["boss_title"] or ""})
     conn.close()
 
     from ..services.messenger import send_batch_items

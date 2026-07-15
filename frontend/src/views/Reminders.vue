@@ -211,6 +211,7 @@ async function doPreview() {
     encrypt_boss_id: b.encrypt_boss_id,
     name: b.name,
     boss_title: b.boss_title || '',
+    company_name: b.company_name || '',
     message: '生成中...',
   }))
   showPreview.value = true
@@ -235,7 +236,7 @@ async function doPreview() {
 async function doSend() {
   sending.value = true
   try {
-    const items = previewItems.value.map(p => ({ name: p.name, message: p.message }))
+    const items = previewItems.value.map(p => ({ name: p.name, message: p.message, company_name: p.company_name || '', boss_title: p.boss_title || '' }))
     const r = await api.sendRemindersWithMessages({ items })
     const ok = r.results?.filter(x => x.success).length || 0
     const fail = r.results?.filter(x => !x.success).length || 0
