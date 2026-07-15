@@ -17,7 +17,7 @@ export const api = {
   generateMessage: async (data, onChunk) => {
     const resp = await fetch('/api/messenger/generate-message', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify({ scheme_index: 0, ...data }),
     })
     // 如果是 SSE 流（AI 模式），逐块回调
     const ct = resp.headers.get('content-type') || ''

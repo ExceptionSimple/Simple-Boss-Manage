@@ -102,6 +102,7 @@ class ConfigBody(BaseModel):
     msg_mode: str | None = None
     msg_template: str | None = None
     ai_prompt: str | None = None
+    msg_schemes: str | None = None
 
 
 @router.get("/config")
@@ -113,6 +114,7 @@ def get_config():
         "msg_mode": _cfg("msg_mode") or "fixed",
         "msg_template": _cfg("msg_template") or "",
         "ai_prompt": _cfg("ai_prompt") or "",
+        "msg_schemes": _cfg("msg_schemes") or "",
     }
 
 

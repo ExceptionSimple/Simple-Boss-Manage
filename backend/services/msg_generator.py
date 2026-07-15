@@ -1,4 +1,5 @@
-"""消息生成：支持固定模板和 AI 生成两种模式"""
+"""消息生成：支持固定模板和 AI 生成两种模式，每种模式有 3 套预设方案"""
+import json
 import logging
 from openai import AsyncOpenAI
 from ..routers.cookie import _cfg
@@ -13,9 +14,37 @@ SYSTEM_PROMPT = (
     "生成纯文本，不要任何结构化输出。"
 )
 
+DEFAULT_FIXED = [
+    "您好，{name}，我对贵司的岗位很感兴趣，方便聊聊吗？",
+    "你好{name}，看到贵司在招{job_name}，我这边有相关经验，可以沟通一下吗？",
+    "您好{name}，我之前做过类似岗位，对这个方向很感兴趣，希望能有机会面试。",
+]
+DEFAULT_AI = [
+    "请为{boss_title or 'HR'}{name or ''}写一段简短的打招呼消息",
+    "请为{boss_title or 'HR'}{name or ''}写一段突出技术能力的自荐消息",
+    "请为{boss_title or 'HR'}{name or ''}写一段询问岗位详情的消息",
+]
+
+
+def _get_scheme_content(mode: str, index: int = 0) -> str:
+    """获取指定模式和索引的方案内容"""
+    schemes_raw = _cfg("msg_schemes") or ""
+    if schemes_raw:
+        try:
+            schemes = json.loads(schemes_raw)
+            return schemes.get(mode, [])[index] if index < len(schemes.get(mode, [])) else ""
+        except (json.JSONDecodeError, KeyError):
+            pass
+    # 回退到旧版单模板
+    if mode == "ai":
+        return _cfg("ai_prompt") or DEFAULT_AI[index] if index < len(DEFAULT_AI) else DEFAULT_AI[0]
+    return _cfg("msg_template") or DEFAULT_FIXED[index] if index < len(DEFAULT_FIXED) else DEFAULT_FIXED[0]
+
 
 def render_template(template: str, name: str = "", boss_title: str = "") -> str:
     """替换模板中的变量占位符 {name} {boss_title}"""
+    if not template:
+        template = DEFAULT_FIXED[0]
     return template.replace("{name}", name or "").replace("{boss_title}", boss_title or "")
 
 
@@ -80,17 +109,16 @@ async def generate_ai_message_stream(prompt: str, user_name: str, boss_title: st
             yield delta.content
 
 
-async def generate_message(name: str = "", boss_title: str = "") -> str:
-    """根据配置生成消息（固定模板或 AI）"""
+async def generate_message(name: str = "", boss_title: str = "", scheme_index: int = 0) -> str:
+    """根据配置生成消息（固定模板或 AI），支持 3 套预设方案"""
     mode = _cfg("msg_mode") or "fixed"
+    content = _get_scheme_content(mode, scheme_index)
 
     if mode == "ai":
-        prompt = _cfg("ai_prompt") or f"请为{boss_title or 'HR'}{name or ''}写一段简短的打招呼消息"
-        logger.info(f"使用 AI 模式，模板：{prompt}")
+        logger.info(f"使用 AI 模式（方案{scheme_index + 1}）：{content[:50]}...")
         try:
-            return await generate_ai_message(prompt, name, boss_title)
+            return await generate_ai_message(content, name, boss_title)
         except Exception as e:
             logger.warning(f"AI 生成失败，回退到固定模板: {e}")
 
-    template = _cfg("msg_template") or "您好，{name}，我对贵司的岗位很感兴趣，方便聊聊吗？"
-    return render_template(template, name, boss_title)
+    return render_template(content, name, boss_title)

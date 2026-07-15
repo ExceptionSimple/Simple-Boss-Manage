@@ -81,7 +81,12 @@
       </el-table-column>
     </el-table>
 
-    <div style="display:flex;gap:12px;align-items:center;">
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+      <el-select v-model="activeSchemeIdx" style="width:100px;" size="default">
+        <el-option label="方案1" :value="0" />
+        <el-option label="方案2" :value="1" />
+        <el-option label="方案3" :value="2" />
+      </el-select>
       <el-button type="primary" :disabled="selected.length === 0" @click="doPreview" :loading="previewing">
         生成预览 ({{ selected.length }})
       </el-button>
@@ -146,6 +151,7 @@ const sending = ref(false)
 const showChat = ref(false)
 const chatBoss = ref(null)
 const chatMsgs = ref([])
+const activeSchemeIdx = ref(0)
 
 // 失败队列
 const failedItems = ref([])
@@ -215,7 +221,7 @@ async function doPreview() {
     const b = selected.value[i]
     try {
       const msg = await api.generateMessage(
-        { name: b.name, boss_title: b.boss_title || '' },
+        { name: b.name, boss_title: b.boss_title || '', scheme_index: activeSchemeIdx.value },
         (text) => { previewItems.value[i].message = text }
       )
       previewItems.value[i].message = msg

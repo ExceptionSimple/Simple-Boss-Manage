@@ -68,6 +68,7 @@ def list_reminders(
 
 class PreviewBody(BaseModel):
     encrypt_boss_ids: list[str]
+    scheme_index: int = 0
 
 
 @router.post("/reminders/preview")
@@ -81,7 +82,7 @@ async def preview_messages(body: PreviewBody):
         ).fetchone()
         if not boss:
             continue
-        msg = await generate_message(name=boss["name"] or "", boss_title=boss["boss_title"] or "")
+        msg = await generate_message(name=boss["name"] or "", boss_title=boss["boss_title"] or "", scheme_index=body.scheme_index)
         results.append({
             "encrypt_boss_id": eid,
             "name": boss["name"],
@@ -94,6 +95,7 @@ async def preview_messages(body: PreviewBody):
 
 class SendBody(BaseModel):
     encrypt_boss_ids: list[str]
+    scheme_index: int = 0
 
 
 class SendMessagesBody(BaseModel):
@@ -108,7 +110,7 @@ async def send_reminders(body: SendBody):
     for eid in body.encrypt_boss_ids:
         boss = conn.execute("SELECT name, boss_title FROM bosses WHERE encrypt_boss_id = ?", (eid,)).fetchone()
         if boss:
-            msg = await generate_message(name=boss["name"] or "", boss_title=boss["boss_title"] or "")
+            msg = await generate_message(name=boss["name"] or "", boss_title=boss["boss_title"] or "", scheme_index=body.scheme_index)
             names.append({"name": boss["name"], "message": msg})
     conn.close()
 

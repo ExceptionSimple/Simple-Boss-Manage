@@ -56,23 +56,37 @@
 
       <el-col :span="12">
         <el-card shadow="hover">
-          <template #header><h3>消息内容设置</h3></template>
-          <p style="color:#999;font-size:13px;margin-bottom:12px;">可用变量：<code>{{ '{name}' }}</code>（姓名）、<code>{{ '{boss_title}' }}</code>（职位）</p>
-
-          <el-radio-group v-model="cfg.msg_mode" @change="saveConfig('msg_mode')" style="margin-bottom:12px;">
-            <el-radio value="fixed">固定文本</el-radio>
-            <el-radio value="ai">AI 生成</el-radio>
-          </el-radio-group>
-
-          <div v-if="cfg.msg_mode === 'fixed'">
-            <el-input v-model="cfg.msg_template" type="textarea" :rows="3" placeholder="您好，{name}，我对贵司的岗位很感兴趣，方便聊聊吗？" @change="saveConfig('msg_template')" />
-            <el-button size="small" @click="testTemplate" style="margin-top:8px;">预览</el-button>
+          <template #header>
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <h3>消息内容设置</h3>
+              <el-radio-group v-model="cfg.msg_mode" @change="onModeChange" size="small">
+                <el-radio-button value="fixed">固定文本</el-radio-button>
+                <el-radio-button value="ai">AI 生成</el-radio-button>
+              </el-radio-group>
+            </div>
+          </template>
+          <p style="color:#999;font-size:13px;margin-bottom:6px;">
+            可用变量：<code>{{ '{name}' }}</code>（姓名）、<code>{{ '{boss_title}' }}</code>（职位）
+          </p>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+            <span style="color:#999;font-size:12px;">测试值：</span>
+            <el-input v-model="testName" size="small" placeholder="姓名" style="width:90px;" />
+            <el-input v-model="testTitle" size="small" placeholder="职位" style="width:90px;" />
           </div>
 
-          <div v-else>
-            <el-input v-model="cfg.ai_prompt" type="textarea" :rows="3" placeholder="为{boss_title}{name}写一段简短的打招呼消息" @change="saveConfig('ai_prompt')" />
-            <el-button size="small" @click="testAi" :loading="testingAi" style="margin-top:8px;">测试生成</el-button>
-          </div>
+          <!-- 3 套方案 tabs -->
+          <el-tabs v-model="activeScheme" @tab-change="onSchemeChange">
+            <el-tab-pane v-for="i in 3" :key="i" :label="'方案' + i" :name="i - 1">
+              <div v-if="cfg.msg_mode === 'fixed'">
+                <el-input v-model="schemes.fixed[i - 1]" type="textarea" :rows="3" :placeholder="defaults.fixed[i - 1]" @change="saveSchemes" />
+                <el-button size="small" @click="testScheme(i - 1)" style="margin-top:8px;">预览</el-button>
+              </div>
+              <div v-else>
+                <el-input v-model="schemes.ai[i - 1]" type="textarea" :rows="3" :placeholder="defaults.ai[i - 1]" @change="saveSchemes" />
+                <el-button size="small" @click="testScheme(i - 1)" :loading="testingAi" style="margin-top:8px;">测试生成</el-button>
+              </div>
+            </el-tab-pane>
+          </el-tabs>
 
           <el-alert v-if="testMsg" :title="'预览: ' + testMsg" type="info" :closable="false" style="margin-top:8px;" />
         </el-card>
@@ -114,9 +128,27 @@ const cfg = reactive({
   api_key: '',
   api_base: '',
   msg_mode: 'fixed',
-  msg_template: '',
-  ai_prompt: '',
 })
+
+const activeScheme = ref(0)
+const testName = ref('张三')
+const testTitle = ref('项目经理')
+const schemes = reactive({
+  fixed: ['', '', ''],
+  ai: ['', '', ''],
+})
+const defaults = {
+  fixed: [
+    '您好，{name}，我对贵司的岗位很感兴趣，方便聊聊吗？',
+    '你好{name}，看到贵司在招岗位，我这边有相关经验，可以沟通一下吗？',
+    '您好{name}，我之前做过类似岗位，对这个方向很感兴趣，希望能有机会面试。',
+  ],
+  ai: [
+    '请为{boss_title}{name}写一段简短的打招呼消息',
+    '请为{boss_title}{name}写一段突出技术能力的自荐消息',
+    '请为{boss_title}{name}写一段询问岗位详情的消息',
+  ],
+}
 
 onMounted(async () => {
   try {
@@ -125,10 +157,46 @@ onMounted(async () => {
     cfg.api_key = c.api_key || ''
     cfg.api_base = c.api_base || ''
     cfg.msg_mode = c.msg_mode || 'fixed'
-    cfg.msg_template = c.msg_template || ''
-    cfg.ai_prompt = c.ai_prompt || ''
+    // 加载方案 JSON
+    if (c.msg_schemes) {
+      try {
+        const s = JSON.parse(c.msg_schemes)
+        schemes.fixed = s.fixed || ['', '', '']
+        schemes.ai = s.ai || ['', '', '']
+      } catch (e) { /* ignore */ }
+    }
   } catch (e) { /* ignore */ }
 })
+
+async function saveSchemes() {
+  await api.updateConfig({ msg_schemes: JSON.stringify({ fixed: schemes.fixed, ai: schemes.ai }) })
+}
+
+function onModeChange() {
+  saveConfig('msg_mode')
+}
+
+function onSchemeChange() {
+  // tab 切换，无需保存
+}
+
+async function testScheme(index) {
+  testMsg.value = ''
+  const name = testName.value || '测试'
+  const title = testTitle.value || 'HR'
+  if (cfg.msg_mode === 'fixed') {
+    const msg = await api.generateMessage({ name, boss_title: title, scheme_index: index })
+    testMsg.value = msg
+  } else {
+    testingAi.value = true; testMsg.value = '生成中...'
+    try {
+      await api.generateMessage({ name, boss_title: title, scheme_index: index }, (text) => {
+        testMsg.value = text
+      })
+    } catch (e) { testMsg.value = '生成失败: ' + e.message }
+    finally { testingAi.value = false }
+  }
+}
 
 async function saveConfig(field) {
   await api.updateConfig({ [field]: cfg[field] })
@@ -194,21 +262,6 @@ function handleEvent(type, data) {
     case 'done': progressPct.value = 100; progressMsg.value = '同步完成'; syncResult.value = { friends: data.friends, new_messages: data.new_messages, errors: data.errors || [] }; break
     case 'error': progressMsg.value = '出错: ' + data.message; break
   }
-}
-
-async function testTemplate() {
-  const msg = await api.generateMessage({ name: '测试', boss_title: 'HR' })
-  testMsg.value = msg
-}
-
-async function testAi() {
-  testingAi.value = true; testMsg.value = '生成中...'
-  try {
-    await api.generateMessage({ name: '测试', boss_title: 'HR' }, (text) => {
-      testMsg.value = text
-    })
-  } catch (e) { testMsg.value = '生成失败: ' + e.message }
-  finally { testingAi.value = false }
 }
 
 async function deleteAll() {
