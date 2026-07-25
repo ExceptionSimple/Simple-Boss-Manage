@@ -10,6 +10,18 @@
           <el-button type="primary" @click="generate(card.key)" :loading="generating">{{ card.btn }}</el-button>
         </el-card>
       </el-col>
+      <el-col :span="8">
+        <el-card shadow="hover">
+          <template #header><h3>自定义范围</h3></template>
+          <p style="color:#999;font-size:13px;margin-bottom:12px;">选择日期范围，对比上一个等长周期</p>
+          <el-date-picker v-model="customDateRange" type="daterange" range-separator="至"
+            start-placeholder="开始日期" end-placeholder="结束日期" format="YYYY-MM-DD" value-format="YYYY-MM-DD"
+            style="width:100%;margin-bottom:12px;" />
+          <el-button type="primary" @click="generateCustom" :loading="generatingCustom" :disabled="!customDateRange[0] || !customDateRange[1]">
+            {{ generatingCustom ? '生成中...' : '生成' }}
+          </el-button>
+        </el-card>
+      </el-col>
     </el-row>
 
     <el-row :gutter="16" style="margin-top:20px;">
@@ -61,6 +73,8 @@ const reportCards = [
   { key: 'monthly-current', title: '本月', desc: '本月至今，对比上月', btn: '生成本月报' },
   { key: 'monthly', title: '上月', desc: '完整上月数据，对比上上月', btn: '生成月报' },
 ]
+const customDateRange = ref([null, null])
+const generatingCustom = ref(false)
 
 const filteredList = computed(() => {
   if (!filterType.value) return reportList.value
@@ -84,6 +98,18 @@ async function generate(type) {
     await loadList()
   } catch (e) { ElMessage.error('生成失败: ' + e.message) }
   finally { generating.value = false }
+}
+
+async function generateCustom() {
+  if (!customDateRange.value[0] || !customDateRange.value[1]) return
+  generatingCustom.value = true
+  try {
+    const r = await api.generateCustomReport(customDateRange.value[0], customDateRange.value[1])
+    ElMessage.success('报告已生成')
+    window.open(r.url, '_blank')
+    await loadList()
+  } catch (e) { ElMessage.error('生成失败: ' + e.message) }
+  finally { generatingCustom.value = false }
 }
 
 async function doDelete() {

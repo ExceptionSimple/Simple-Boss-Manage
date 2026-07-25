@@ -97,6 +97,7 @@ export const api = {
   getRecentResumes: () => request('/stats/recent-resumes?limit=5'),
   getDashboardSyncLogs: () => request('/stats/sync-logs?limit=5'),
   generateReport: (type) => request(`/reports/${type}`),
+  generateCustomReport: (start, end) => request(`/reports/custom?start=${start}&end=${end}`),
   listReports: () => request('/reports/list'),
   deleteReports: (names) => request('/reports/delete', { method: 'DELETE', body: JSON.stringify({ names }) }),
 }

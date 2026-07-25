@@ -56,7 +56,7 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
 <div class="container">
 <div class="header">
   <h1>{title}</h1>
-  <p>{date_range} · 对比{prev_label}</p>
+  <p>{date_range}{(' · 对比' + prev_label) if prev_label else ''}</p>
 </div>
 
 <div class="summary">{ai_summary}</div>
@@ -240,6 +240,36 @@ def generate_monthly_current():
     return {"ok": True, "path": f"monthly_cur_{ts}.html", "url": f"/api/reports/view/monthly_cur_{ts}.html"}
 
 
+@router.get("/reports/custom")
+def generate_custom(start: str = Query(...), end: str = Query(...)):
+    """生成指定日期范围的报告（不做周期对比）
+    start/end 格式: YYYY-MM-DD"""
+    fmt = "%Y-%m-%d"
+    d_start = datetime.strptime(start, fmt)
+    d_end = datetime.strptime(end, fmt)
+    start_ms = int(d_start.timestamp()) * 1000
+    end_ms = int((d_end + timedelta(days=1)).timestamp()) * 1000
+
+    d1 = d_start.strftime('%m/%d')
+    d2 = d_end.strftime('%m/%d')
+
+    # 只统计范围内，不对比
+    stats = _build_stats(start_ms, end_ms, 0, 0, "")
+    # 清空趋势字段
+    for k in ("trend_talked", "trend_msg", "trend_resume", "trend_interview",
+              "trend_talked_cls", "trend_msg_cls", "trend_resume_cls", "trend_interview_cls"):
+        stats[k] = ""
+    daily = _daily_data(start_ms, end_ms)
+    title = f"报告 {d1} - {d2}"
+
+    html = _build_html(title, f"{d1} - {d2}", "", stats, daily, stats["top"])
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    path = os.path.join(REPORTS_DIR, f"custom_{ts}.html")
+    with open(path, "w") as f:
+        f.write(html)
+    return {"ok": True, "path": f"custom_{ts}.html", "url": f"/api/reports/view/custom_{ts}.html"}
+
+
 @router.get("/reports/list")
 def list_reports():
     files = sorted(
@@ -250,7 +280,9 @@ def list_reports():
     for f in files:
         p = os.path.join(REPORTS_DIR, f)
         t = datetime.fromtimestamp(os.path.getmtime(p)).strftime('%Y-%m-%d %H:%M')
-        kind = "周报" if f.startswith("weekly") else "月报"
+        if f.startswith("weekly"): kind = "周报"
+        elif f.startswith("custom"): kind = "自定义"
+        else: kind = "月报"
         results.append({"name": f, "type": kind, "time": t, "url": f"/api/reports/view/{f}"})
     return results
 
