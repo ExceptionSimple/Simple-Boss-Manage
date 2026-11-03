@@ -17,6 +17,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
 
 from database import get_db, init_db, DB_PATH
 
+MILESTONE_ID = 1
+
 
 def _copy_db(src: str, dst: str):
     """复制数据库 — 先 checkpoint WAL 确保数据完整"""
@@ -57,7 +59,7 @@ class TestDatabaseSchema(unittest.TestCase):
             "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
         ).fetchall()}
         expected = {"bosses", "chat_messages", "config", "job_info",
-                    "message_failed_queue", "sync_logs"}
+                    "message_failed_queue", "sync_logs", "milestones"}
         self.assertTrue(expected.issubset(tables),
                         f"缺少表: {expected - tables}")
 
@@ -74,7 +76,7 @@ class TestDatabaseSchema(unittest.TestCase):
 
     def test_job_info_columns(self):
         cols = {r[1] for r in self.conn.execute("PRAGMA table_info(job_info)").fetchall()}
-        expected = {"id", "name", "city", "salary_desc", "job_type_desc",
+        expected = {"id", "milestone_id", "name", "city", "salary_desc", "job_type_desc",
                     "position_name", "detail", "company_url", "company_name",
                     "created_at", "updated_at"}
         self.assertEqual(expected, cols, f"job_info 列不匹配: {cols}")
@@ -125,6 +127,13 @@ class _TempDBTestCase(unittest.TestCase):
         database.DB_PATH = cls.tmpdb
         init_db()
         database.DB_PATH = cls._orig_path
+        conn = sqlite3.connect(cls.tmpdb)
+        conn.execute(
+            "INSERT OR IGNORE INTO milestones (id, name, status) VALUES (?, 'M-TEST', 'active')",
+            (MILESTONE_ID,),
+        )
+        conn.commit()
+        conn.close()
 
     @classmethod
     def tearDownClass(cls):
@@ -147,9 +156,9 @@ class TestJobInfoCRUD(_TempDBTestCase):
 
     def test_insert(self):
         self.conn.execute(
-            "INSERT OR REPLACE INTO job_info (id, name, city, salary_desc, job_type_desc, position_name, updated_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))",
-            ("test_001", "后端开发", "北京", "15-25K", "全职", "Java工程师"),
+            "INSERT OR REPLACE INTO job_info (id, milestone_id, name, city, salary_desc, job_type_desc, position_name, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))",
+            ("test_001", MILESTONE_ID, "后端开发", "北京", "15-25K", "全职", "Java工程师"),
         )
         row = self.conn.execute("SELECT * FROM job_info WHERE id=?", ("test_001",)).fetchone()
         self.assertIsNotNone(row)
@@ -157,12 +166,12 @@ class TestJobInfoCRUD(_TempDBTestCase):
 
     def test_upsert(self):
         self.conn.execute(
-            "INSERT OR REPLACE INTO job_info (id, name, city, updated_at) VALUES (?, ?, ?, datetime('now', 'localtime'))",
-            ("test_002", "旧名称", "上海"),
+            "INSERT OR REPLACE INTO job_info (id, milestone_id, name, city, updated_at) VALUES (?, ?, ?, ?, datetime('now', 'localtime'))",
+            ("test_002", MILESTONE_ID, "旧名称", "上海"),
         )
         self.conn.execute(
-            "INSERT OR REPLACE INTO job_info (id, name, city, salary_desc, updated_at) VALUES (?, ?, ?, ?, datetime('now', 'localtime'))",
-            ("test_002", "新名称", "深圳", "20-30K"),
+            "INSERT OR REPLACE INTO job_info (id, milestone_id, name, city, salary_desc, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now', 'localtime'))",
+            ("test_002", MILESTONE_ID, "新名称", "深圳", "20-30K"),
         )
         row = self.conn.execute("SELECT * FROM job_info WHERE id=?", ("test_002",)).fetchone()
         self.assertEqual(row["name"], "新名称")
@@ -170,8 +179,8 @@ class TestJobInfoCRUD(_TempDBTestCase):
 
     def test_update_detail(self):
         self.conn.execute(
-            "INSERT OR REPLACE INTO job_info (id, name, updated_at) VALUES (?, ?, datetime('now', 'localtime'))",
-            ("test_003", "测试岗"),
+            "INSERT OR REPLACE INTO job_info (id, milestone_id, name, updated_at) VALUES (?, ?, ?, datetime('now', 'localtime'))",
+            ("test_003", MILESTONE_ID, "测试岗"),
         )
         self.conn.execute(
             "UPDATE job_info SET detail=?, company_url=?, company_name=? WHERE id=?",
@@ -183,8 +192,8 @@ class TestJobInfoCRUD(_TempDBTestCase):
 
     def test_city_from_body_type8(self):
         self.conn.execute(
-            "INSERT OR REPLACE INTO job_info (id, name, city, updated_at) VALUES (?, ?, ?, datetime('now', 'localtime'))",
-            ("test_004", "PM", ""),
+            "INSERT OR REPLACE INTO job_info (id, milestone_id, name, city, updated_at) VALUES (?, ?, ?, ?, datetime('now', 'localtime'))",
+            ("test_004", MILESTONE_ID, "PM", ""),
         )
         self.conn.execute("UPDATE job_info SET city=? WHERE id=?", ("杭州", "test_004"))
         row = self.conn.execute("SELECT city FROM job_info WHERE id=?", ("test_004",)).fetchone()
@@ -192,8 +201,8 @@ class TestJobInfoCRUD(_TempDBTestCase):
 
     def test_delete(self):
         self.conn.execute(
-            "INSERT OR REPLACE INTO job_info (id, name, updated_at) VALUES (?, ?, datetime('now', 'localtime'))",
-            ("test_del", "待删除"),
+            "INSERT OR REPLACE INTO job_info (id, milestone_id, name, updated_at) VALUES (?, ?, ?, datetime('now', 'localtime'))",
+            ("test_del", MILESTONE_ID, "待删除"),
         )
         self.conn.execute("DELETE FROM job_info WHERE id=?", ("test_del",))
         self.assertIsNone(self.conn.execute("SELECT * FROM job_info WHERE id=?", ("test_del",)).fetchone())
@@ -207,15 +216,15 @@ class TestBossJobRelation(_TempDBTestCase):
         # 插入一条测试 boss（确保有数据可测）
         self.test_eid = "test_boss_relation_001"
         self.conn.execute(
-            "INSERT OR REPLACE INTO bosses (encrypt_boss_id, boss_id, name, update_time) VALUES (?, 999, ?, 0)",
-            (self.test_eid, "测试BOSS"),
+            "INSERT OR REPLACE INTO bosses (encrypt_boss_id, milestone_id, boss_id, name, update_time) VALUES (?, ?, 999, ?, 0)",
+            (self.test_eid, MILESTONE_ID, "测试BOSS"),
         )
 
     def test_join_with_job_id(self):
         self.conn.execute(
-            "INSERT OR REPLACE INTO job_info (id, name, city, salary_desc, updated_at)"
-            " VALUES (?, ?, ?, ?, datetime('now', 'localtime'))",
-            ("job_r1", "全栈", "广州", "18-25K"),
+            "INSERT OR REPLACE INTO job_info (id, milestone_id, name, city, salary_desc, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, datetime('now', 'localtime'))",
+            ("job_r1", MILESTONE_ID, "全栈", "广州", "18-25K"),
         )
         self.conn.execute(
             "UPDATE bosses SET job_id=?, company_name=? WHERE encrypt_boss_id=?",
@@ -263,8 +272,8 @@ class TestMessageFailedQueue(_TempDBTestCase):
 
     def test_insert(self):
         self.conn.execute(
-            "INSERT INTO message_failed_queue (boss_name, message, error) VALUES (?, ?, ?)",
-            ("测试", "你好", "超时"),
+            "INSERT INTO message_failed_queue (boss_name, message, error, milestone_id) VALUES (?, ?, ?, ?)",
+            ("测试", "你好", "超时", MILESTONE_ID),
         )
         row = self.conn.execute(
             "SELECT * FROM message_failed_queue ORDER BY id DESC LIMIT 1"
@@ -274,8 +283,8 @@ class TestMessageFailedQueue(_TempDBTestCase):
 
     def test_retry_increment(self):
         self.conn.execute(
-            "INSERT INTO message_failed_queue (boss_name, message, error) VALUES (?, ?, ?)",
-            ("重试", "msg", "err"),
+            "INSERT INTO message_failed_queue (boss_name, message, error, milestone_id) VALUES (?, ?, ?, ?)",
+            ("重试", "msg", "err", MILESTONE_ID),
         )
         rid = self.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         self.conn.execute(
@@ -288,8 +297,8 @@ class TestMessageFailedQueue(_TempDBTestCase):
 
     def test_delete_on_success(self):
         self.conn.execute(
-            "INSERT INTO message_failed_queue (boss_name, message, error) VALUES (?, ?, ?)",
-            ("ok", "msg", "err"),
+            "INSERT INTO message_failed_queue (boss_name, message, error, milestone_id) VALUES (?, ?, ?, ?)",
+            ("ok", "msg", "err", MILESTONE_ID),
         )
         rid = self.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         self.conn.execute("DELETE FROM message_failed_queue WHERE id=?", (rid,))

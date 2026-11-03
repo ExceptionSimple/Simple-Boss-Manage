@@ -24,7 +24,7 @@
 
     <div style="display:flex;align-items:center;gap:12px;margin-top:16px;">
       <h3 style="margin:0;">聊天记录 ({{ msgTotal }})</h3>
-      <el-button type="primary" size="small" @click="showSendDialog = true" :icon="Promotion">发送消息</el-button>
+      <el-button v-if="!isReadonly" type="primary" size="small" @click="showSendDialog = true" :icon="Promotion">发送消息</el-button>
     </div>
 
     <el-dialog v-model="showSendDialog" title="发送消息" width="450px">
@@ -58,6 +58,7 @@ import { useRoute } from 'vue-router'
 import { Promotion } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { api } from '../api'
+import { isReadonly } from '../store/milestone'
 
 const route = useRoute()
 const bossId = route.params.id
@@ -70,7 +71,7 @@ const sendMsg = ref('')
 const sending = ref(false)
 
 async function doSend() {
-  if (!sendMsg.value.trim()) return
+  if (isReadonly.value || !sendMsg.value.trim()) return
   sending.value = true
   try {
     await api.sendMessage({ boss_name: boss.value.name, message: sendMsg.value })
@@ -143,7 +144,7 @@ onMounted(async () => {
 .boss-detail-page {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 80px);
+  height: calc(100vh - 96px);
   overflow: hidden;
 }
 .boss-detail-page > .el-button {

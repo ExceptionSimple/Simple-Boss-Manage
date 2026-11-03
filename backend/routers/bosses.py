@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from ..database import get_db
+from ..milestone_utils import require_editable
 
 router = APIRouter()
 
@@ -9,6 +10,7 @@ ALLOWED_SORTS = {"first_msg_time", "last_msg_time"}
 
 @router.get("/bosses")
 def list_bosses(
+    milestone_id: int = Query(..., description="里程碑 ID"),
     city: str = Query("", description="城市筛选"),
     position: str = Query("", description="职位筛选"),
     keyword: str = Query("", description="公司名/岗位名搜索"),
@@ -21,8 +23,8 @@ def list_bosses(
     size: int = Query(20, ge=1, le=100),
 ):
     conn = get_db()
-    where = []
-    params = []
+    where = ["b.milestone_id = ?"]
+    params = [milestone_id]
 
     if city:
         where.append("(j.city LIKE ? OR b.location_name LIKE ?)")
@@ -43,7 +45,7 @@ def list_bosses(
         where.append("has_written_test = ?")
         params.append(has_written_test)
 
-    where_clause = ("WHERE " + " AND ".join(where)) if where else ""
+    where_clause = "WHERE " + " AND ".join(where)
 
     sort_col = sort_by if sort_by in ALLOWED_SORTS else "last_msg_time"
     sort_col = f"b.{sort_col}"  # fully qualified
@@ -51,7 +53,7 @@ def list_bosses(
 
     offset = (page - 1) * size
 
-    join_clause = "LEFT JOIN job_info j ON b.job_id = j.id"
+    join_clause = "LEFT JOIN job_info j ON b.job_id = j.id AND j.milestone_id = b.milestone_id"
 
     total_row = conn.execute(
         f"SELECT COUNT(*) as cnt FROM bosses b {join_clause} {where_clause}", params
@@ -77,14 +79,16 @@ def list_bosses(
 
 
 @router.get("/bosses/{encrypt_boss_id}")
-def boss_detail(encrypt_boss_id: str):
+def boss_detail(encrypt_boss_id: str, milestone_id: int = Query(..., description="里程碑 ID")):
     conn = get_db()
     boss = conn.execute(
         """SELECT b.*, j.name as job_name, j.city as job_city, j.salary_desc,
                   j.position_name, j.job_type_desc, j.detail as job_detail,
                   j.company_url
-           FROM bosses b LEFT JOIN job_info j ON b.job_id = j.id
-           WHERE b.encrypt_boss_id = ?""", (encrypt_boss_id,)
+           FROM bosses b
+           LEFT JOIN job_info j ON b.job_id = j.id AND j.milestone_id = b.milestone_id
+           WHERE b.encrypt_boss_id = ? AND b.milestone_id = ?""",
+        (encrypt_boss_id, milestone_id),
     ).fetchone()
     conn.close()
     if not boss:
@@ -100,48 +104,60 @@ class BossUpdate(BaseModel):
 
 
 @router.patch("/bosses/{encrypt_boss_id}")
-def update_boss(encrypt_boss_id: str, body: BossUpdate):
+def update_boss(
+    encrypt_boss_id: str,
+    body: BossUpdate,
+    milestone_id: int = Query(..., description="里程碑 ID"),
+):
     conn = get_db()
-    updates = []
-    params = []
-    if body.has_interview is not None:
-        updates.append("has_interview = ?")
-        params.append(1 if body.has_interview else 0)
-    if body.is_resume_sent is not None:
-        updates.append("is_resume_sent = ?")
-        params.append(1 if body.is_resume_sent else 0)
-    if body.has_written_test is not None:
-        updates.append("has_written_test = ?")
-        params.append(1 if body.has_written_test else 0)
-    if body.send_resume_datetime is not None:
-        updates.append("send_resume_datetime = ?")
-        params.append(body.send_resume_datetime)
-    if updates:
-        updates.append("updated_at = datetime('now', 'localtime')")
-        params.append(encrypt_boss_id)
-        conn.execute(
-            f"UPDATE bosses SET {', '.join(updates)} WHERE encrypt_boss_id = ?",
-            params,
-        )
-        conn.commit()
-    conn.close()
+    try:
+        require_editable(conn, milestone_id)
+        updates = []
+        params = []
+        if body.has_interview is not None:
+            updates.append("has_interview = ?")
+            params.append(1 if body.has_interview else 0)
+        if body.is_resume_sent is not None:
+            updates.append("is_resume_sent = ?")
+            params.append(1 if body.is_resume_sent else 0)
+        if body.has_written_test is not None:
+            updates.append("has_written_test = ?")
+            params.append(1 if body.has_written_test else 0)
+        if body.send_resume_datetime is not None:
+            updates.append("send_resume_datetime = ?")
+            params.append(body.send_resume_datetime)
+        if updates:
+            updates.append("updated_at = datetime('now', 'localtime')")
+            params.extend([encrypt_boss_id, milestone_id])
+            conn.execute(
+                f"UPDATE bosses SET {', '.join(updates)} "
+                f"WHERE encrypt_boss_id = ? AND milestone_id = ?",
+                params,
+            )
+            conn.commit()
+    finally:
+        conn.close()
     return {"ok": True}
 
 
 @router.delete("/bosses")
-def delete_all_bosses():
+def delete_all_bosses(milestone_id: int = Query(..., description="里程碑 ID")):
     conn = get_db()
-    conn.execute("DELETE FROM chat_messages")
-    conn.execute("DELETE FROM bosses")
-    deleted = conn.total_changes
-    conn.commit()
-    conn.close()
+    try:
+        require_editable(conn, milestone_id)
+        conn.execute("DELETE FROM chat_messages WHERE milestone_id = ?", (milestone_id,))
+        conn.execute("DELETE FROM bosses WHERE milestone_id = ?", (milestone_id,))
+        deleted = conn.total_changes
+        conn.commit()
+    finally:
+        conn.close()
     return {"ok": True, "deleted": deleted}
 
 
 @router.get("/bosses/{encrypt_boss_id}/messages")
 def boss_messages(
     encrypt_boss_id: str,
+    milestone_id: int = Query(..., description="里程碑 ID"),
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
 ):
@@ -149,13 +165,16 @@ def boss_messages(
     offset = (page - 1) * size
 
     total_row = conn.execute(
-        "SELECT COUNT(*) as cnt FROM chat_messages WHERE encrypt_boss_id = ?",
-        (encrypt_boss_id,),
+        "SELECT COUNT(*) as cnt FROM chat_messages "
+        "WHERE encrypt_boss_id = ? AND milestone_id = ?",
+        (encrypt_boss_id, milestone_id),
     ).fetchone()
 
     rows = conn.execute(
-        "SELECT * FROM chat_messages WHERE encrypt_boss_id = ? ORDER BY time ASC LIMIT ? OFFSET ?",
-        (encrypt_boss_id, size, offset),
+        "SELECT * FROM chat_messages "
+        "WHERE encrypt_boss_id = ? AND milestone_id = ? "
+        "ORDER BY time ASC LIMIT ? OFFSET ?",
+        (encrypt_boss_id, milestone_id, size, offset),
     ).fetchall()
     conn.close()
 

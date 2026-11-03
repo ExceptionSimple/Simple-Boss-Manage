@@ -1,8 +1,20 @@
 const BASE = '/api'
 
+let currentMilestoneId = null
+
+export function setMilestoneId(id) {
+  currentMilestoneId = id
+}
+
+function withMilestone(path) {
+  if (!currentMilestoneId) return path
+  const sep = path.includes('?') ? '&' : '?'
+  return `${path}${sep}milestone_id=${currentMilestoneId}`
+}
+
 async function request(path, options = {}) {
   const headers = { 'Content-Type': 'application/json', ...options.headers }
-  const resp = await fetch(`${BASE}${path}`, { ...options, headers })
+  const resp = await fetch(`${BASE}${withMilestone(path)}`, { ...options, headers })
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}))
     throw new Error(err.detail || `HTTP ${resp.status}`)
@@ -11,6 +23,11 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  // Milestones
+  listMilestones: () => request('/milestones'),
+  createMilestone: () => request('/milestones', { method: 'POST' }),
+  saveMilestone: (id) => request(`/milestones/${id}/save`, { method: 'POST' }),
+
   // Config
   getConfig: () => request('/config'),
   updateConfig: (data) => request('/config', { method: 'PUT', body: JSON.stringify(data) }),
@@ -53,7 +70,7 @@ export const api = {
   verifyCookie: () => request('/cookie/verify'),
 
   // Sync
-  triggerSync: () => fetch('/api/sync', { method: 'POST' }),
+  triggerSync: () => fetch(`/api/sync${currentMilestoneId ? `?milestone_id=${currentMilestoneId}` : ''}`, { method: 'POST' }),
   getSyncLogs: () => request('/sync/logs?limit=10'),
 
   // Bosses

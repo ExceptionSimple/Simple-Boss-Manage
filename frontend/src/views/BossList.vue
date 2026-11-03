@@ -33,7 +33,7 @@
     </el-row>
 
     <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;">
-      <el-button type="primary" :disabled="selectedNames.length === 0" @click="showBatchDialog = true">
+      <el-button type="primary" :disabled="isReadonly || selectedNames.length === 0" @click="showBatchDialog = true">
         批量发消息 ({{ selectedNames.length }})
       </el-button>
       <span v-if="selectedNames.length" style="font-size:13px;color:#999;">已选：{{ selectedNames.join(', ') }}</span>
@@ -54,7 +54,7 @@
     <el-table :data="bosses" v-loading="loading" stripe border style="width:100%"
       @sort-change="handleSortChange" :default-sort="{ prop: 'last_msg_time', order: 'descending' }"
       @selection-change="onSelectionChange" ref="tableRef">
-      <el-table-column type="selection" width="40" />
+      <el-table-column v-if="!isReadonly" type="selection" width="40" />
       <el-table-column label="BOSS" min-width="140">
         <template #default="{ row }">
           <div style="display:flex;align-items:center;gap:8px;">
@@ -78,6 +78,7 @@
               type="date"
               size="small"
               style="width:120px"
+              :disabled="isReadonly"
               @change="updateResumeDate(row)"
             />
           </template>
@@ -92,17 +93,17 @@
       </el-table-column>
       <el-table-column label="面试" width="70" align="center" v-if="vis('interview')">
         <template #default="{ row }">
-          <el-checkbox :model-value="!!row.has_interview" @change="toggle(row, 'has_interview')" />
+          <el-checkbox :model-value="!!row.has_interview" :disabled="isReadonly" @change="toggle(row, 'has_interview')" />
         </template>
       </el-table-column>
       <el-table-column label="简历" width="70" align="center" v-if="vis('resume')">
         <template #default="{ row }">
-          <el-checkbox :model-value="!!row.is_resume_sent" @change="toggle(row, 'is_resume_sent')" />
+          <el-checkbox :model-value="!!row.is_resume_sent" :disabled="isReadonly" @change="toggle(row, 'is_resume_sent')" />
         </template>
       </el-table-column>
       <el-table-column label="笔试" width="70" align="center" v-if="vis('test')">
         <template #default="{ row }">
-          <el-checkbox :model-value="!!row.has_written_test" @change="toggle(row, 'has_written_test')" />
+          <el-checkbox :model-value="!!row.has_written_test" :disabled="isReadonly" @change="toggle(row, 'has_written_test')" />
         </template>
       </el-table-column>
       <el-table-column label="操作" width="80" fixed="right">
@@ -129,6 +130,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { api } from '../api'
+import { isReadonly } from '../store/milestone'
 
 const bosses = ref([])
 const loading = ref(false)
@@ -185,6 +187,7 @@ async function fetchData() {
 }
 
 async function updateResumeDate(row) {
+  if (isReadonly.value) return
   const ts = row._resumeDate ? row._resumeDate.getTime() : null
   await api.updateBoss(row.encrypt_boss_id, { send_resume_datetime: ts })
 }
@@ -209,7 +212,7 @@ function handleSortChange({ prop, order }) {
 function onSelectionChange(val) { selectedBosses.value = val }
 
 async function doBatchSend() {
-  if (!batchMsg.value.trim() || selectedNames.value.length === 0) return
+  if (isReadonly.value || !batchMsg.value.trim() || selectedNames.value.length === 0) return
   batchSending.value = true
   try {
     const r = await api.sendBatchMessage({
@@ -230,6 +233,7 @@ async function doBatchSend() {
 }
 
 async function toggle(boss, field) {
+  if (isReadonly.value) return
   const newVal = !boss[field]
   boss[field] = newVal ? 1 : 0
   try {

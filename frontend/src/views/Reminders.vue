@@ -8,10 +8,10 @@
         <div style="display:flex;align-items:center;justify-content:space-between;">
           <span style="color:#f56c6c;font-weight:600;">⚠ 发送失败队列 ({{ failedItems.length }})</span>
           <div style="display:flex;gap:8px;">
-            <el-button size="small" type="danger" @click="retryFailed([])" :loading="retryingFailed">
+            <el-button size="small" type="danger" @click="retryFailed([])" :loading="retryingFailed" :disabled="isReadonly">
               重试全部
             </el-button>
-            <el-button size="small" @click="clearFailedQueue([])" :disabled="retryingFailed">
+            <el-button size="small" @click="clearFailedQueue([])" :disabled="retryingFailed || isReadonly">
               清空队列
             </el-button>
           </div>
@@ -28,16 +28,16 @@
         <el-table-column prop="created_at" label="时间" width="140" />
         <el-table-column label="操作" width="120">
           <template #default="{ row }">
-            <el-button type="primary" link size="small" @click="retryFailed([row.id])">重试</el-button>
-            <el-button type="danger" link size="small" @click="clearFailedQueue([row.id])">删除</el-button>
+            <el-button type="primary" link size="small" @click="retryFailed([row.id])" :disabled="isReadonly">重试</el-button>
+            <el-button type="danger" link size="small" @click="clearFailedQueue([row.id])" :disabled="isReadonly">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
       <div v-if="failedSelected.length" style="margin-top:8px;">
-        <el-button size="small" type="danger" @click="retryFailed(failedSelected.map(r => r.id))">
+        <el-button size="small" type="danger" @click="retryFailed(failedSelected.map(r => r.id))" :disabled="isReadonly">
           重试选中 ({{ failedSelected.length }})
         </el-button>
-        <el-button size="small" @click="clearFailedQueue(failedSelected.map(r => r.id))">
+        <el-button size="small" @click="clearFailedQueue(failedSelected.map(r => r.id))" :disabled="isReadonly">
           删除选中 ({{ failedSelected.length }})
         </el-button>
       </div>
@@ -81,7 +81,7 @@
       </el-table-column>
     </el-table>
 
-    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+    <div v-if="!isReadonly" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
       <el-select v-model="activeSchemeIdx" style="width:100px;" size="default">
         <el-option label="方案1" :value="0" />
         <el-option label="方案2" :value="1" />
@@ -134,7 +134,9 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { api } from '../api'
+import { isReadonly } from '../store/milestone'
 
 const items = ref([])
 const loading = ref(false)
@@ -165,6 +167,7 @@ async function fetchFailedQueue() {
 function onFailedSelect(val) { failedSelected.value = val }
 
 async function retryFailed(ids) {
+  if (isReadonly.value) return
   retryingFailed.value = true
   try {
     const r = await api.retryFailedQueue(ids)
@@ -177,6 +180,7 @@ async function retryFailed(ids) {
 }
 
 async function clearFailedQueue(ids) {
+  if (isReadonly.value) return
   try {
     const r = await api.deleteFailedQueue(ids)
     ElMessage.success(`已清除 ${r.deleted} 条记录`)
@@ -206,6 +210,7 @@ async function openChat(row) {
 }
 
 async function doPreview() {
+  if (isReadonly.value) return
   // 立即打开 Dialog
   previewItems.value = selected.value.map(b => ({
     encrypt_boss_id: b.encrypt_boss_id,
@@ -234,6 +239,7 @@ async function doPreview() {
 }
 
 async function doSend() {
+  if (isReadonly.value) return
   sending.value = true
   try {
     const items = previewItems.value.map(p => ({ name: p.name, message: p.message, company_name: p.company_name || '', boss_title: p.boss_title || '' }))

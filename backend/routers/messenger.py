@@ -1,8 +1,10 @@
 import json
 import logging
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
+from ..database import get_db
+from ..milestone_utils import require_editable
 from ..services.messenger import (
     send_to_boss, send_batch, login_and_capture,
     import_cookies_from_json, check_login_status,
@@ -73,10 +75,26 @@ async def api_generate_message(body: dict):
 
 
 @router.post("/messenger/send")
-async def api_send_single(body: SendSingleBody):
-    return await send_to_boss(body.boss_name, body.message)
+async def api_send_single(
+    body: SendSingleBody,
+    milestone_id: int = Query(..., description="里程碑 ID"),
+):
+    conn = get_db()
+    try:
+        require_editable(conn, milestone_id)
+    finally:
+        conn.close()
+    return await send_to_boss(body.boss_name, body.message, milestone_id=milestone_id)
 
 
 @router.post("/messenger/send-batch")
-async def api_send_batch(body: SendBatchBody):
-    return await send_batch(body.boss_names, body.message)
+async def api_send_batch(
+    body: SendBatchBody,
+    milestone_id: int = Query(..., description="里程碑 ID"),
+):
+    conn = get_db()
+    try:
+        require_editable(conn, milestone_id)
+    finally:
+        conn.close()
+    return await send_batch(body.boss_names, body.message, milestone_id=milestone_id)

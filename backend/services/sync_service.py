@@ -22,7 +22,7 @@ def _event(event_type: str, **data) -> str:
     return f"event: {event_type}\ndata: {payload}\n\n"
 
 
-async def sync_all():
+async def sync_all(milestone_id: int):
     """全量同步生成器，逐条 yield SSE 事件"""
     conn = get_db()
 
@@ -76,10 +76,10 @@ async def sync_all():
             # 2a. Insert or update boss (不覆盖手动字段)
             conn.execute(
                 """
-                INSERT OR IGNORE INTO bosses (encrypt_boss_id, boss_id, name, update_time)
-                VALUES (?, ?, ?, ?)
+                INSERT OR IGNORE INTO bosses (encrypt_boss_id, milestone_id, boss_id, name, update_time)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (encrypt_id, f["friendId"], name, f.get("updateTime", 0)),
+                (encrypt_id, milestone_id, f["friendId"], name, f.get("updateTime", 0)),
             )
             # Update boss with fields we have from friend list
             conn.execute(
@@ -88,12 +88,13 @@ async def sync_all():
                     location_name = COALESCE(NULLIF(bosses.location_name, ''), ?),
                     update_time = MAX(update_time, ?),
                     updated_at = datetime('now', 'localtime')
-                WHERE encrypt_boss_id = ?
+                WHERE encrypt_boss_id = ? AND milestone_id = ?
                 """,
                 (
                     "",
                     f.get("updateTime", 0),
                     encrypt_id,
+                    milestone_id,
                 ),
             )
 
@@ -114,8 +115,8 @@ async def sync_all():
 
                 # Check if we have a job_id already
                 existing_job_id_row = conn.execute(
-                    "SELECT job_id FROM bosses WHERE encrypt_boss_id = ?",
-                    (encrypt_id,),
+                    "SELECT job_id FROM bosses WHERE encrypt_boss_id = ? AND milestone_id = ?",
+                    (encrypt_id, milestone_id),
                 ).fetchone()
                 had_job_id = existing_job_id_row and existing_job_id_row["job_id"]
 
@@ -126,7 +127,7 @@ async def sync_all():
                         has_interview = CASE WHEN ? = 1 THEN 1 ELSE has_interview END,
                         job_id = COALESCE(NULLIF(bosses.job_id, ''), ?),
                         updated_at = datetime('now', 'localtime')
-                    WHERE encrypt_boss_id = ?
+                    WHERE encrypt_boss_id = ? AND milestone_id = ?
                     """,
                     (
                         result.get("title", ""),
@@ -134,6 +135,7 @@ async def sync_all():
                         1 if job.get("hasInterview") else 0,
                         encrypt_job_id,
                         encrypt_id,
+                        milestone_id,
                     ),
                 )
 
@@ -141,8 +143,8 @@ async def sync_all():
                 api_company_name = result.get("companyName", "")
                 if api_company_name:
                     conn.execute(
-                        "UPDATE bosses SET company_name = COALESCE(NULLIF(bosses.company_name, ''), ?), updated_at = datetime('now', 'localtime') WHERE encrypt_boss_id = ?",
-                        (api_company_name, encrypt_id),
+                        "UPDATE bosses SET company_name = COALESCE(NULLIF(bosses.company_name, ''), ?), updated_at = datetime('now', 'localtime') WHERE encrypt_boss_id = ? AND milestone_id = ?",
+                        (api_company_name, encrypt_id, milestone_id),
                     )
 
                 # UPSERT job_info with fields from friend list + job data
@@ -150,11 +152,12 @@ async def sync_all():
                     logger.info(f"写入 job_info: id={encrypt_job_id}, name={f.get('jobName', '')}")
                     conn.execute(
                         """
-                        INSERT OR REPLACE INTO job_info (id, name, city, salary_desc, job_type_desc, position_name, company_name, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
+                        INSERT OR REPLACE INTO job_info (id, milestone_id, name, city, salary_desc, job_type_desc, position_name, company_name, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
                         """,
                         (
                             encrypt_job_id,
+                            milestone_id,
                             f.get("jobName", ""),
                             f.get("jobCity", ""),
                             job.get("salaryDesc", ""),
@@ -168,8 +171,8 @@ async def sync_all():
                 if tiny_url:
                     avatar_filename = await boss_api.download_avatar(tiny_url, friend_id, AVATAR_DIR)
                     conn.execute(
-                        "UPDATE bosses SET avatar_url = ? WHERE encrypt_boss_id = ?",
-                        (avatar_filename, encrypt_id),
+                        "UPDATE bosses SET avatar_url = ? WHERE encrypt_boss_id = ? AND milestone_id = ?",
+                        (avatar_filename, encrypt_id, milestone_id),
                     )
             except Exception as e:
                 logger.warning(f"岗位信息获取失败 ({name}): {e}")
@@ -228,8 +231,8 @@ async def sync_all():
                             # 统一标记简历已发送
                             if mark_resume:
                                 conn.execute(
-                                    "UPDATE bosses SET is_resume_sent = 1, send_resume_datetime = COALESCE(send_resume_datetime, ?) WHERE encrypt_boss_id = ?",
-                                    (msg_time, encrypt_id),
+                                    "UPDATE bosses SET is_resume_sent = 1, send_resume_datetime = COALESCE(send_resume_datetime, ?) WHERE encrypt_boss_id = ? AND milestone_id = ?",
+                                    (msg_time, encrypt_id, milestone_id),
                                 )
                             elif body_type == 20:
                                 sticker = body.get("sticker", {}) or {}
@@ -253,12 +256,13 @@ async def sync_all():
                             conn.execute(
                                 """
                                 INSERT OR IGNORE INTO chat_messages
-                                    (id, encrypt_boss_id, received, body_type, body_content,
+                                    (id, milestone_id, encrypt_boss_id, received, body_type, body_content,
                                      push_text, side, status, time, from_name, to_name)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                 """,
                                 (
                                     mid,
+                                    milestone_id,
                                     encrypt_id,
                                     1 if msg.get("received") else 0,
                                     body_type,
@@ -276,12 +280,12 @@ async def sync_all():
                             else:
                                 # 消息已存在，检查 status 是否变化
                                 old_status = conn.execute(
-                                    "SELECT status FROM chat_messages WHERE id = ?", (mid,)
+                                    "SELECT status FROM chat_messages WHERE id = ? AND milestone_id = ?", (mid, milestone_id)
                                 ).fetchone()
                                 if old_status and old_status[0] != new_status:
                                     conn.execute(
-                                        "UPDATE chat_messages SET status = ? WHERE id = ?",
-                                        (new_status, mid),
+                                        "UPDATE chat_messages SET status = ? WHERE id = ? AND milestone_id = ?",
+                                        (new_status, mid, milestone_id),
                                     )
                                     updated_count += 1
                         except Exception:
@@ -302,11 +306,11 @@ async def sync_all():
                     conn.execute(
                         """
                         UPDATE bosses SET
-                            first_msg_time = (SELECT MIN(time) FROM chat_messages WHERE encrypt_boss_id = ?),
-                            last_msg_time  = (SELECT MAX(time) FROM chat_messages WHERE encrypt_boss_id = ?)
-                        WHERE encrypt_boss_id = ?
+                            first_msg_time = (SELECT MIN(time) FROM chat_messages WHERE encrypt_boss_id = ? AND milestone_id = ?),
+                            last_msg_time  = (SELECT MAX(time) FROM chat_messages WHERE encrypt_boss_id = ? AND milestone_id = ?)
+                        WHERE encrypt_boss_id = ? AND milestone_id = ?
                         """,
-                        (encrypt_id, encrypt_id, encrypt_id),
+                        (encrypt_id, milestone_id, encrypt_id, milestone_id, encrypt_id, milestone_id),
                     )
                 if cutoff and total_msgs > 0 and new_count == 0:
                     stats["skipped_bosses"] += 1
@@ -337,9 +341,9 @@ async def sync_all():
 
     # 写同步日志
     conn.execute(
-        """INSERT INTO sync_logs (sync_days, friends, new_messages, updated, skipped, errors)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (sync_days, stats["friends"], stats["new_messages"], stats["updated_messages"],
+        """INSERT INTO sync_logs (milestone_id, sync_days, friends, new_messages, updated, skipped, errors)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (milestone_id, sync_days, stats["friends"], stats["new_messages"], stats["updated_messages"],
          stats["skipped_bosses"], "; ".join(stats["errors"]) if stats["errors"] else ""),
     )
     conn.commit()

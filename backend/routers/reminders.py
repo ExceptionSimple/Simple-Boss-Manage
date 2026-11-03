@@ -4,6 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from ..database import get_db
+from ..milestone_utils import require_editable
 from ..services.msg_generator import generate_message
 
 logger = logging.getLogger("reminders")
@@ -12,6 +13,7 @@ router = APIRouter()
 
 @router.get("/reminders")
 def list_reminders(
+    milestone_id: int = Query(..., description="里程碑 ID"),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
 ):
@@ -25,11 +27,11 @@ def list_reminders(
         FROM bosses b
         INNER JOIN chat_messages cm ON cm.id = (
             SELECT id FROM chat_messages
-            WHERE encrypt_boss_id = b.encrypt_boss_id
+            WHERE encrypt_boss_id = b.encrypt_boss_id AND milestone_id = b.milestone_id
             ORDER BY time DESC LIMIT 1
         )
-        WHERE cm.side = 'right'
-    """).fetchone()
+        WHERE b.milestone_id = ? AND cm.side = 'right'
+    """, (milestone_id,)).fetchone()
     total = total_row["cnt"] if total_row else 0
 
     rows = conn.execute("""
@@ -40,21 +42,24 @@ def list_reminders(
             cm.status AS last_msg_status,
             cm.time AS last_msg_time,
             (SELECT COUNT(*) FROM chat_messages
-             WHERE encrypt_boss_id = b.encrypt_boss_id AND side = 'right'
+             WHERE encrypt_boss_id = b.encrypt_boss_id
+               AND milestone_id = b.milestone_id AND side = 'right'
                AND time > COALESCE(
-                 (SELECT MAX(time) FROM chat_messages WHERE encrypt_boss_id = b.encrypt_boss_id AND side = 'left'), 0)
+                 (SELECT MAX(time) FROM chat_messages
+                  WHERE encrypt_boss_id = b.encrypt_boss_id
+                    AND milestone_id = b.milestone_id AND side = 'left'), 0)
             ) AS unanswered_count
         FROM bosses b
-        LEFT JOIN job_info j ON b.job_id = j.id
+        LEFT JOIN job_info j ON b.job_id = j.id AND j.milestone_id = b.milestone_id
         INNER JOIN chat_messages cm ON cm.id = (
             SELECT id FROM chat_messages
-            WHERE encrypt_boss_id = b.encrypt_boss_id
+            WHERE encrypt_boss_id = b.encrypt_boss_id AND milestone_id = b.milestone_id
             ORDER BY time DESC LIMIT 1
         )
-        WHERE cm.side = 'right'
+        WHERE b.milestone_id = ? AND cm.side = 'right'
         ORDER BY unanswered_count DESC, cm.time DESC
         LIMIT ? OFFSET ?
-    """, (size, offset)).fetchall()
+    """, (milestone_id, size, offset)).fetchall()
     conn.close()
 
     items = []
@@ -72,24 +77,32 @@ class PreviewBody(BaseModel):
 
 
 @router.post("/reminders/preview")
-async def preview_messages(body: PreviewBody):
+async def preview_messages(
+    body: PreviewBody,
+    milestone_id: int = Query(..., description="里程碑 ID"),
+):
     """为选中的 BOSS 生成消息预览"""
     conn = get_db()
-    results = []
-    for eid in body.encrypt_boss_ids:
-        boss = conn.execute(
-            "SELECT name, boss_title FROM bosses WHERE encrypt_boss_id = ?", (eid,)
-        ).fetchone()
-        if not boss:
-            continue
-        msg = await generate_message(name=boss["name"] or "", boss_title=boss["boss_title"] or "", scheme_index=body.scheme_index)
-        results.append({
-            "encrypt_boss_id": eid,
-            "name": boss["name"],
-            "boss_title": boss["boss_title"],
-            "message": msg,
-        })
-    conn.close()
+    try:
+        require_editable(conn, milestone_id)
+        results = []
+        for eid in body.encrypt_boss_ids:
+            boss = conn.execute(
+                "SELECT name, boss_title FROM bosses "
+                "WHERE encrypt_boss_id = ? AND milestone_id = ?",
+                (eid, milestone_id),
+            ).fetchone()
+            if not boss:
+                continue
+            msg = await generate_message(name=boss["name"] or "", boss_title=boss["boss_title"] or "", scheme_index=body.scheme_index)
+            results.append({
+                "encrypt_boss_id": eid,
+                "name": boss["name"],
+                "boss_title": boss["boss_title"],
+                "message": msg,
+            })
+    finally:
+        conn.close()
     return {"items": results}
 
 
@@ -103,27 +116,45 @@ class SendMessagesBody(BaseModel):
 
 
 @router.post("/reminders/send")
-async def send_reminders(body: SendBody):
+async def send_reminders(
+    body: SendBody,
+    milestone_id: int = Query(..., description="里程碑 ID"),
+):
     """发送提醒消息（后端生成内容）"""
     conn = get_db()
-    names = []
-    for eid in body.encrypt_boss_ids:
-        boss = conn.execute("SELECT name, boss_title FROM bosses WHERE encrypt_boss_id = ?", (eid,)).fetchone()
-        if boss:
-            msg = await generate_message(name=boss["name"] or "", boss_title=boss["boss_title"] or "", scheme_index=body.scheme_index)
-            names.append({"name": boss["name"], "message": msg, "company_name": boss.get("company_name", ""), "boss_title": boss["boss_title"] or ""})
-    conn.close()
+    try:
+        require_editable(conn, milestone_id)
+        names = []
+        for eid in body.encrypt_boss_ids:
+            boss = conn.execute(
+                "SELECT name, boss_title, company_name FROM bosses "
+                "WHERE encrypt_boss_id = ? AND milestone_id = ?",
+                (eid, milestone_id),
+            ).fetchone()
+            if boss:
+                msg = await generate_message(name=boss["name"] or "", boss_title=boss["boss_title"] or "", scheme_index=body.scheme_index)
+                names.append({"name": boss["name"], "message": msg, "company_name": boss["company_name"] or "", "boss_title": boss["boss_title"] or ""})
+    finally:
+        conn.close()
 
     from ..services.messenger import send_batch_items
-    results = await send_batch_items(names)
+    results = await send_batch_items(names, milestone_id)
     return results
 
 
 @router.post("/reminders/send-messages")
-async def send_reminders_with_messages(body: SendMessagesBody):
+async def send_reminders_with_messages(
+    body: SendMessagesBody,
+    milestone_id: int = Query(..., description="里程碑 ID"),
+):
     """发送提醒消息（发送完浏览器保持打开，用户手动关闭）"""
+    conn = get_db()
+    try:
+        require_editable(conn, milestone_id)
+    finally:
+        conn.close()
     from ..services.messenger import send_batch_items
-    results = await send_batch_items(body.items)
+    results = await send_batch_items(body.items, milestone_id)
     return results
 
 
@@ -131,12 +162,14 @@ async def send_reminders_with_messages(body: SendMessagesBody):
 
 
 @router.get("/reminders/failed-queue")
-def list_failed_queue():
+def list_failed_queue(milestone_id: int = Query(..., description="里程碑 ID")):
     """获取发送失败队列"""
     conn = get_db()
     rows = conn.execute(
         """SELECT * FROM message_failed_queue
-           ORDER BY created_at DESC"""
+           WHERE milestone_id = ?
+           ORDER BY created_at DESC""",
+        (milestone_id,),
     ).fetchall()
     conn.close()
     return {"items": [dict(r) for r in rows]}
@@ -147,20 +180,28 @@ class FailedQueueRetryBody(BaseModel):
 
 
 @router.post("/reminders/failed-queue/retry")
-async def retry_failed_queue(body: FailedQueueRetryBody):
+async def retry_failed_queue(
+    body: FailedQueueRetryBody,
+    milestone_id: int = Query(..., description="里程碑 ID"),
+):
     """重试失败队列中的消息"""
     conn = get_db()
-    if body.ids:
-        placeholders = ",".join("?" for _ in body.ids)
-        rows = conn.execute(
-            f"SELECT * FROM message_failed_queue WHERE id IN ({placeholders}) ORDER BY created_at",
-            body.ids,
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            "SELECT * FROM message_failed_queue ORDER BY created_at"
-        ).fetchall()
-    conn.close()
+    try:
+        require_editable(conn, milestone_id)
+        if body.ids:
+            placeholders = ",".join("?" for _ in body.ids)
+            rows = conn.execute(
+                f"SELECT * FROM message_failed_queue "
+                f"WHERE milestone_id = ? AND id IN ({placeholders}) ORDER BY created_at",
+                [milestone_id] + body.ids,
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM message_failed_queue WHERE milestone_id = ? ORDER BY created_at",
+                (milestone_id,),
+            ).fetchall()
+    finally:
+        conn.close()
 
     if not rows:
         return {"ok": True, "results": [], "message": "队列为空"}
@@ -169,7 +210,7 @@ async def retry_failed_queue(body: FailedQueueRetryBody):
     retry_ids = [r["id"] for r in rows]
 
     from ..services.messenger import send_batch_items
-    results = await send_batch_items(items)
+    results = await send_batch_items(items, milestone_id)
 
     # 删除重试成功的记录
     succeeded_names = {r["name"] for r in results.get("results", []) if r.get("success")}
@@ -196,18 +237,27 @@ class FailedQueueDeleteBody(BaseModel):
 
 
 @router.delete("/reminders/failed-queue")
-def delete_failed_queue(body: Optional[FailedQueueDeleteBody] = None):
-    """删除失败队列记录（空 body 或空 ids = 清空全部）"""
+def delete_failed_queue(
+    milestone_id: int = Query(..., description="里程碑 ID"),
+    body: Optional[FailedQueueDeleteBody] = None,
+):
+    """删除失败队列记录（空 body 或空 ids = 清空当前里程碑全部）"""
     conn = get_db()
-    if body and body.ids:
-        placeholders = ",".join("?" for _ in body.ids)
-        conn.execute(
-            f"DELETE FROM message_failed_queue WHERE id IN ({placeholders})",
-            body.ids,
-        )
-    else:
-        conn.execute("DELETE FROM message_failed_queue")
-    deleted = conn.total_changes
-    conn.commit()
-    conn.close()
+    try:
+        require_editable(conn, milestone_id)
+        if body and body.ids:
+            placeholders = ",".join("?" for _ in body.ids)
+            conn.execute(
+                f"DELETE FROM message_failed_queue "
+                f"WHERE milestone_id = ? AND id IN ({placeholders})",
+                [milestone_id] + body.ids,
+            )
+        else:
+            conn.execute(
+                "DELETE FROM message_failed_queue WHERE milestone_id = ?", (milestone_id,)
+            )
+        deleted = conn.total_changes
+        conn.commit()
+    finally:
+        conn.close()
     return {"ok": True, "deleted": deleted}

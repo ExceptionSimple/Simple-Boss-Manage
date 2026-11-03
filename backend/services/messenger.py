@@ -332,15 +332,17 @@ async def _send_one(page: Page, name: str, message: str) -> dict:
 
 # ── 失败记录 ────────────────────────────────────────────────
 
-def _record_failed(boss_name: str, message: str, error: str, encrypt_boss_id: str = None):
+def _record_failed(boss_name: str, message: str, error: str, milestone_id: int,
+                   encrypt_boss_id: str = None):
     """将发送失败的消息写入数据库队列"""
     try:
         from ..database import get_db
         conn = get_db()
         conn.execute(
-            """INSERT INTO message_failed_queue (boss_name, encrypt_boss_id, message, error)
-               VALUES (?, ?, ?, ?)""",
-            (boss_name, encrypt_boss_id or "", message, error),
+            """INSERT INTO message_failed_queue
+                   (milestone_id, boss_name, encrypt_boss_id, message, error)
+               VALUES (?, ?, ?, ?, ?)""",
+            (milestone_id, boss_name, encrypt_boss_id or "", message, error),
         )
         conn.commit()
         conn.close()
@@ -349,7 +351,7 @@ def _record_failed(boss_name: str, message: str, error: str, encrypt_boss_id: st
         logger.error(f"记录失败队列异常: {e}")
 
 
-def _record_results(results: list[dict], items: list[dict]):
+def _record_results(results: list[dict], items: list[dict], milestone_id: int):
     """根据发送结果，将失败的条目写入队列"""
     # 构建 name -> item 的映射（找 encrypt_boss_id）
     item_map = {}
@@ -364,6 +366,7 @@ def _record_results(results: list[dict], items: list[dict]):
                 boss_name=name,
                 message=item.get("message", ""),
                 error=r.get("error", "未知错误"),
+                milestone_id=milestone_id,
                 encrypt_boss_id=item.get("encrypt_boss_id", ""),
             )
 
@@ -456,24 +459,25 @@ async def import_cookies_from_json(raw: list[dict]) -> dict:
     return {"ok": True, "count": len(normalized)}
 
 
-async def send_to_boss(boss_name: str, message: str, company_name: str = "", boss_title: str = "") -> dict:
+async def send_to_boss(boss_name: str, message: str, company_name: str = "", boss_title: str = "",
+                       milestone_id: int = None) -> dict:
     try:
         p, browser, ctx, page = await _launch()
         if not await _find_and_click(page, boss_name, company_name=company_name, boss_title=boss_title):
             result = {"success": False, "error": f"未在聊天列表中找到 {boss_name}"}
-            _record_failed(boss_name, message, result["error"])
+            _record_failed(boss_name, message, result["error"], milestone_id)
             return result
         result = await _send_one(page, boss_name, message)
         if not result.get("success"):
-            _record_failed(boss_name, message, result.get("error", "发送失败"))
+            _record_failed(boss_name, message, result.get("error", "发送失败"), milestone_id)
         return result
     except Exception as e:
-        _record_failed(boss_name, message, str(e))
+        _record_failed(boss_name, message, str(e), milestone_id)
         return {"success": False, "error": str(e)}
     # 不关闭浏览器，用户手动关闭
 
 
-async def send_batch_items(items: list[dict]) -> dict:
+async def send_batch_items(items: list[dict], milestone_id: int = None) -> dict:
     """批量发送，每个 BOSS 独立消息。发送完不关闭浏览器，用户手动关。"""
     results = []
     try:
@@ -501,11 +505,11 @@ async def send_batch_items(items: list[dict]) -> dict:
     except Exception as e:
         return {"success": False, "error": str(e)}
     finally:
-        _record_results(results, items)
+        _record_results(results, items, milestone_id)
     # 不关闭浏览器，用户手动关闭
 
 
-async def send_batch(boss_names: list[str], message: str) -> dict:
+async def send_batch(boss_names: list[str], message: str, milestone_id: int = None) -> dict:
     """批量发送：左边列表始终存在，依次点击→发送→下一个，无需返回"""
     results = []
     p = browser = ctx = None
@@ -532,4 +536,4 @@ async def send_batch(boss_names: list[str], message: str) -> dict:
         return {"success": False, "error": str(e)}
     finally:
         _items = [{"name": n, "message": message} for n in boss_names]
-        _record_results(results, _items)
+        _record_results(results, _items, milestone_id)

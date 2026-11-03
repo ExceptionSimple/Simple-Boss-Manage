@@ -30,7 +30,7 @@
             <p style="font-size:14px;margin-top:8px;color:#333;">{{ progressMsg }}</p>
             <p style="font-size:12px;color:#999;">{{ progressDetail }}</p>
           </div>
-          <el-button type="primary" @click="doSync" :disabled="syncing" :loading="syncing">{{ syncing ? '同步中...' : '同步聊天记录' }}</el-button>
+          <el-button type="primary" @click="doSync" :disabled="syncing || isReadonly" :loading="syncing">{{ syncing ? '同步中...' : '同步聊天记录' }}</el-button>
           <el-alert v-if="syncResult" type="success" :closable="false" style="margin-top:12px;">
             <template #title>
               同步完成 — 联系人: {{ syncResult.friends }} | 新消息: {{ syncResult.new_messages }}
@@ -98,8 +98,8 @@
       <el-col :span="12">
         <el-card shadow="hover" style="border:1px solid #fecaca;">
           <template #header><h3 style="color:#ef4444;">危险操作</h3></template>
-          <p style="color:#999;font-size:13px;margin-bottom:12px;">删除所有投递记录和聊天消息，此操作不可撤销。</p>
-          <el-button type="danger" @click="deleteAll">删除所有数据</el-button>
+          <p style="color:#999;font-size:13px;margin-bottom:12px;">删除当前里程碑的所有投递记录和聊天消息，此操作不可撤销。</p>
+          <el-button type="danger" @click="deleteAll" :disabled="isReadonly">清空当前里程碑数据</el-button>
         </el-card>
       </el-col>
     </el-row>
@@ -108,7 +108,9 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '../api'
+import { milestoneStore, isReadonly } from '../store/milestone'
 
 const cookieValid = ref(false)
 const cookieVerifyMsg = ref('')
@@ -234,10 +236,11 @@ async function doVerify() {
 }
 
 async function doSync() {
+  if (isReadonly.value) return
   syncing.value = true; syncResult.value = null; progressPct.value = 0
   progressMsg.value = '准备中...'; progressDetail.value = ''
   try {
-    const resp = await fetch('/api/sync', { method: 'POST' })
+    const resp = await fetch(`/api/sync?milestone_id=${milestoneStore.currentId}`, { method: 'POST' })
     const reader = resp.body.getReader(); const decoder = new TextDecoder(); let buffer = ''
     while (true) {
       const { value, done } = await reader.read(); if (done) break
@@ -265,8 +268,9 @@ function handleEvent(type, data) {
 }
 
 async function deleteAll() {
+  if (isReadonly.value) return
   try {
-    await ElMessageBox.confirm('确定要删除所有投递记录和聊天消息吗？此操作不可撤销。', '警告', { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' })
+    await ElMessageBox.confirm('确定要删除当前里程碑的所有投递记录和聊天消息吗？此操作不可撤销。', '警告', { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' })
     const r = await api.deleteAllBosses()
     ElMessage.success(`已删除 ${r.deleted} 条记录`)
   } catch (e) { /* cancelled */ }

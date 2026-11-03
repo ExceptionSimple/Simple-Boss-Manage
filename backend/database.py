@@ -1,9 +1,27 @@
-import sqlite3
 import os
+import sqlite3
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
 DB_PATH = os.path.join(PROJECT_ROOT, "data.db")
+
+# 里程碑迁移时用于复制数据的完整列清单
+BOSS_COLUMNS = [
+    "id", "encrypt_boss_id", "boss_id", "name", "boss_title", "avatar_url",
+    "location_name", "has_interview", "is_resume_sent", "has_written_test",
+    "send_resume_datetime", "first_msg_time", "last_msg_time", "update_time",
+    "job_id", "company_name", "company_url", "created_at", "updated_at",
+]
+JOB_INFO_COLUMNS = [
+    "id", "name", "city", "salary_desc", "job_type_desc", "position_name",
+    "detail", "company_url", "company_name", "created_at", "updated_at",
+]
+CHAT_MESSAGE_COLUMNS = [
+    "id", "encrypt_boss_id", "received", "body_type", "body_content",
+    "push_text", "side", "status", "time", "from_name", "to_name", "created_at",
+]
+
+DATA_TABLES = ["bosses", "job_info", "chat_messages", "sync_logs", "message_failed_queue"]
 
 
 def get_db() -> sqlite3.Connection:
@@ -11,6 +29,10 @@ def get_db() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
+
+
+def _table_columns(conn: sqlite3.Connection, table: str) -> list[str]:
+    return [row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
 
 
 def init_db():
@@ -21,9 +43,18 @@ def init_db():
             value TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS milestones (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT UNIQUE NOT NULL,
+            status     TEXT NOT NULL DEFAULT 'active',
+            created_at TEXT DEFAULT (datetime('now', 'localtime')),
+            frozen_at  TEXT
+        );
+
         CREATE TABLE IF NOT EXISTS bosses (
             id               INTEGER PRIMARY KEY AUTOINCREMENT,
-            encrypt_boss_id  TEXT UNIQUE NOT NULL,
+            encrypt_boss_id  TEXT NOT NULL,
+            milestone_id     INTEGER NOT NULL,
             boss_id          INTEGER,
             name             TEXT,
             boss_title       TEXT,
@@ -36,12 +67,17 @@ def init_db():
             first_msg_time   INTEGER,
             last_msg_time    INTEGER,
             update_time      INTEGER,
+            job_id           TEXT,
+            company_name     TEXT,
+            company_url      TEXT,
             created_at       TEXT DEFAULT (datetime('now', 'localtime')),
-            updated_at       TEXT DEFAULT (datetime('now', 'localtime'))
+            updated_at       TEXT DEFAULT (datetime('now', 'localtime')),
+            UNIQUE (encrypt_boss_id, milestone_id)
         );
 
         CREATE TABLE IF NOT EXISTS job_info (
-            id               TEXT PRIMARY KEY,
+            id               TEXT NOT NULL,
+            milestone_id     INTEGER NOT NULL,
             name             TEXT,
             city             TEXT,
             salary_desc      TEXT,
@@ -51,11 +87,13 @@ def init_db():
             company_url      TEXT,
             company_name     TEXT,
             created_at       TEXT DEFAULT (datetime('now', 'localtime')),
-            updated_at       TEXT DEFAULT (datetime('now', 'localtime'))
+            updated_at       TEXT DEFAULT (datetime('now', 'localtime')),
+            PRIMARY KEY (id, milestone_id)
         );
 
         CREATE TABLE IF NOT EXISTS chat_messages (
-            id               INTEGER PRIMARY KEY,
+            id               INTEGER NOT NULL,
+            milestone_id     INTEGER NOT NULL,
             encrypt_boss_id  TEXT NOT NULL,
             received         INTEGER,
             body_type        INTEGER,
@@ -66,14 +104,13 @@ def init_db():
             time             INTEGER,
             from_name        TEXT,
             to_name          TEXT,
-            created_at       TEXT DEFAULT (datetime('now', 'localtime'))
+            created_at       TEXT DEFAULT (datetime('now', 'localtime')),
+            PRIMARY KEY (id, milestone_id)
         );
-
-        CREATE INDEX IF NOT EXISTS idx_messages_boss ON chat_messages(encrypt_boss_id);
-        CREATE INDEX IF NOT EXISTS idx_messages_time ON chat_messages(time);
 
         CREATE TABLE IF NOT EXISTS sync_logs (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            milestone_id INTEGER NOT NULL,
             sync_time    TEXT DEFAULT (datetime('now', 'localtime')),
             sync_days    INTEGER DEFAULT 0,
             friends      INTEGER DEFAULT 0,
@@ -85,6 +122,7 @@ def init_db():
 
         CREATE TABLE IF NOT EXISTS message_failed_queue (
             id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            milestone_id     INTEGER NOT NULL,
             boss_name        TEXT NOT NULL,
             encrypt_boss_id  TEXT,
             message          TEXT NOT NULL,
@@ -162,9 +200,152 @@ def init_db():
             INSERT INTO chat_messages_new SELECT * FROM chat_messages;
             DROP TABLE chat_messages;
             ALTER TABLE chat_messages_new RENAME TO chat_messages;
-            CREATE INDEX IF NOT EXISTS idx_messages_boss ON chat_messages(encrypt_boss_id);
-            CREATE INDEX IF NOT EXISTS idx_messages_time ON chat_messages(time);
         """)
         conn.commit()
 
+    _migrate_to_milestones(conn)
+    _create_milestone_indexes(conn)
     conn.close()
+
+
+def _copy_columns(conn: sqlite3.Connection, table: str, columns: list[str]) -> list[str]:
+    """返回旧表中实际存在的列，避免老库缺列时复制失败"""
+    existing = set(_table_columns(conn, table))
+    return [col for col in columns if col in existing]
+
+
+def _rebuild_bosses(conn: sqlite3.Connection, milestone_id: int):
+    cols = _copy_columns(conn, "bosses", BOSS_COLUMNS)
+    insert_cols = ", ".join(cols + ["milestone_id"])
+    select_cols = ", ".join(cols + [str(int(milestone_id))])
+    conn.executescript(f"""
+        CREATE TABLE bosses_milestone_new (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            encrypt_boss_id  TEXT NOT NULL,
+            milestone_id     INTEGER NOT NULL,
+            boss_id          INTEGER,
+            name             TEXT,
+            boss_title       TEXT,
+            avatar_url       TEXT,
+            location_name    TEXT,
+            has_interview      INTEGER,
+            is_resume_sent     INTEGER DEFAULT 0,
+            has_written_test     INTEGER DEFAULT 0,
+            send_resume_datetime INTEGER,
+            first_msg_time   INTEGER,
+            last_msg_time    INTEGER,
+            update_time      INTEGER,
+            job_id           TEXT,
+            company_name     TEXT,
+            company_url      TEXT,
+            created_at       TEXT DEFAULT (datetime('now', 'localtime')),
+            updated_at       TEXT DEFAULT (datetime('now', 'localtime')),
+            UNIQUE (encrypt_boss_id, milestone_id)
+        );
+        INSERT INTO bosses_milestone_new ({insert_cols})
+        SELECT {select_cols} FROM bosses;
+        DROP TABLE bosses;
+        ALTER TABLE bosses_milestone_new RENAME TO bosses;
+    """)
+
+
+def _rebuild_job_info(conn: sqlite3.Connection, milestone_id: int):
+    cols = _copy_columns(conn, "job_info", JOB_INFO_COLUMNS)
+    insert_cols = ", ".join(cols + ["milestone_id"])
+    select_cols = ", ".join(cols + [str(int(milestone_id))])
+    conn.executescript(f"""
+        CREATE TABLE job_info_milestone_new (
+            id               TEXT NOT NULL,
+            milestone_id     INTEGER NOT NULL,
+            name             TEXT,
+            city             TEXT,
+            salary_desc      TEXT,
+            job_type_desc    TEXT,
+            position_name    TEXT,
+            detail           TEXT,
+            company_url      TEXT,
+            company_name     TEXT,
+            created_at       TEXT DEFAULT (datetime('now', 'localtime')),
+            updated_at       TEXT DEFAULT (datetime('now', 'localtime')),
+            PRIMARY KEY (id, milestone_id)
+        );
+        INSERT INTO job_info_milestone_new ({insert_cols})
+        SELECT {select_cols} FROM job_info;
+        DROP TABLE job_info;
+        ALTER TABLE job_info_milestone_new RENAME TO job_info;
+    """)
+
+
+def _rebuild_chat_messages(conn: sqlite3.Connection, milestone_id: int):
+    cols = _copy_columns(conn, "chat_messages", CHAT_MESSAGE_COLUMNS)
+    insert_cols = ", ".join(cols + ["milestone_id"])
+    select_cols = ", ".join(cols + [str(int(milestone_id))])
+    conn.executescript(f"""
+        CREATE TABLE chat_messages_milestone_new (
+            id               INTEGER NOT NULL,
+            milestone_id     INTEGER NOT NULL,
+            encrypt_boss_id  TEXT NOT NULL,
+            received         INTEGER,
+            body_type        INTEGER,
+            body_content     TEXT,
+            push_text        TEXT,
+            side             TEXT DEFAULT 'right',
+            status           INTEGER,
+            time             INTEGER,
+            from_name        TEXT,
+            to_name          TEXT,
+            created_at       TEXT DEFAULT (datetime('now', 'localtime')),
+            PRIMARY KEY (id, milestone_id)
+        );
+        INSERT INTO chat_messages_milestone_new ({insert_cols})
+        SELECT {select_cols} FROM chat_messages;
+        DROP TABLE chat_messages;
+        ALTER TABLE chat_messages_milestone_new RENAME TO chat_messages;
+    """)
+
+
+def _migrate_to_milestones(conn: sqlite3.Connection):
+    """给业务表补充 milestone_id；有存量数据时自动创建 M1 并归入"""
+    missing = [t for t in DATA_TABLES if "milestone_id" not in _table_columns(conn, t)]
+    if not missing:
+        return
+
+    row = conn.execute("SELECT id FROM milestones ORDER BY id LIMIT 1").fetchone()
+    has_data = any(
+        conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone()
+        for table in DATA_TABLES
+    )
+
+    if row:
+        milestone_id = row["id"]
+    elif has_data:
+        cur = conn.execute("INSERT INTO milestones (name, status) VALUES ('M1', 'active')")
+        milestone_id = cur.lastrowid
+    else:
+        milestone_id = 0
+
+    if "milestone_id" not in _table_columns(conn, "bosses"):
+        _rebuild_bosses(conn, milestone_id)
+    if "milestone_id" not in _table_columns(conn, "job_info"):
+        _rebuild_job_info(conn, milestone_id)
+    if "milestone_id" not in _table_columns(conn, "chat_messages"):
+        _rebuild_chat_messages(conn, milestone_id)
+    for table in ("sync_logs", "message_failed_queue"):
+        if "milestone_id" not in _table_columns(conn, table):
+            conn.execute(
+                f"ALTER TABLE {table} ADD COLUMN milestone_id INTEGER NOT NULL "
+                f"DEFAULT {int(milestone_id)}"
+            )
+    conn.commit()
+
+
+def _create_milestone_indexes(conn: sqlite3.Connection):
+    conn.executescript("""
+        CREATE INDEX IF NOT EXISTS idx_bosses_milestone ON bosses(milestone_id);
+        CREATE INDEX IF NOT EXISTS idx_job_info_milestone ON job_info(milestone_id);
+        CREATE INDEX IF NOT EXISTS idx_messages_boss ON chat_messages(milestone_id, encrypt_boss_id);
+        CREATE INDEX IF NOT EXISTS idx_messages_time ON chat_messages(milestone_id, time);
+        CREATE INDEX IF NOT EXISTS idx_sync_logs_milestone ON sync_logs(milestone_id);
+        CREATE INDEX IF NOT EXISTS idx_failed_queue_milestone ON message_failed_queue(milestone_id);
+    """)
+    conn.commit()

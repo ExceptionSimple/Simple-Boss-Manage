@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, Query
 from fastapi.responses import FileResponse, HTMLResponse
 from ..database import get_db
+from ..milestone_utils import get_milestone
 from .stats import _start_of_week, _start_of_month, _start_of_day
 
 logger = logging.getLogger("reports")
@@ -107,36 +108,68 @@ def _calc_trend(curr, prev, label: str) -> tuple[str, str]:
     return f"较{label} →", ""
 
 
-def _daily_data(start_ms: int, end_ms: int) -> list:
+def _milestone_name(milestone_id: int) -> str:
+    conn = get_db()
+    try:
+        return get_milestone(conn, milestone_id)["name"]
+    finally:
+        conn.close()
+
+
+def _daily_data(start_ms: int, end_ms: int, milestone_id: int) -> list:
     conn = get_db()
     rows = conn.execute(
         """SELECT DATE(time/1000,'unixepoch','localtime') as date, COUNT(*) as cnt
-           FROM chat_messages WHERE time >= ? AND time < ? GROUP BY date ORDER BY date""",
-        (start_ms, end_ms),
+           FROM chat_messages
+           WHERE milestone_id = ? AND time >= ? AND time < ?
+           GROUP BY date ORDER BY date""",
+        (milestone_id, start_ms, end_ms),
     ).fetchall()
     conn.close()
     return [{"date": r["date"], "count": r["cnt"]} for r in rows]
 
 
-def _build_stats(period_start: int, period_end: int, prev_start: int, prev_end: int, prev_label: str) -> dict:
+def _build_stats(period_start: int, period_end: int, prev_start: int, prev_end: int,
+                 prev_label: str, milestone_id: int) -> dict:
     conn = get_db()
-    cur_talked = conn.execute("SELECT COUNT(DISTINCT encrypt_boss_id) FROM chat_messages WHERE time >= ? AND time < ?", (period_start, period_end)).fetchone()[0]
-    prev_talked = conn.execute("SELECT COUNT(DISTINCT encrypt_boss_id) FROM chat_messages WHERE time >= ? AND time < ?", (prev_start, prev_end)).fetchone()[0]
-    cur_msgs = conn.execute("SELECT COUNT(*) FROM chat_messages WHERE time >= ? AND time < ?", (period_start, period_end)).fetchone()[0]
-    prev_msgs = conn.execute("SELECT COUNT(*) FROM chat_messages WHERE time >= ? AND time < ?", (prev_start, prev_end)).fetchone()[0]
+    cur_talked = conn.execute(
+        "SELECT COUNT(DISTINCT encrypt_boss_id) FROM chat_messages "
+        "WHERE milestone_id = ? AND time >= ? AND time < ?",
+        (milestone_id, period_start, period_end)).fetchone()[0]
+    prev_talked = conn.execute(
+        "SELECT COUNT(DISTINCT encrypt_boss_id) FROM chat_messages "
+        "WHERE milestone_id = ? AND time >= ? AND time < ?",
+        (milestone_id, prev_start, prev_end)).fetchone()[0]
+    cur_msgs = conn.execute(
+        "SELECT COUNT(*) FROM chat_messages WHERE milestone_id = ? AND time >= ? AND time < ?",
+        (milestone_id, period_start, period_end)).fetchone()[0]
+    prev_msgs = conn.execute(
+        "SELECT COUNT(*) FROM chat_messages WHERE milestone_id = ? AND time >= ? AND time < ?",
+        (milestone_id, prev_start, prev_end)).fetchone()[0]
     cur_resume = conn.execute(
-        "SELECT COUNT(*) FROM bosses WHERE is_resume_sent=1 AND send_resume_datetime IS NOT NULL AND send_resume_datetime >= ? AND send_resume_datetime < ?",
-        (period_start, period_end)).fetchone()[0]
+        "SELECT COUNT(*) FROM bosses WHERE milestone_id = ? AND is_resume_sent=1 "
+        "AND send_resume_datetime IS NOT NULL AND send_resume_datetime >= ? AND send_resume_datetime < ?",
+        (milestone_id, period_start, period_end)).fetchone()[0]
     prev_resume = conn.execute(
-        "SELECT COUNT(*) FROM bosses WHERE is_resume_sent=1 AND send_resume_datetime IS NOT NULL AND send_resume_datetime >= ? AND send_resume_datetime < ?",
-        (prev_start, prev_end)).fetchone()[0]
+        "SELECT COUNT(*) FROM bosses WHERE milestone_id = ? AND is_resume_sent=1 "
+        "AND send_resume_datetime IS NOT NULL AND send_resume_datetime >= ? AND send_resume_datetime < ?",
+        (milestone_id, prev_start, prev_end)).fetchone()[0]
     interviews = conn.execute(
-        "SELECT COUNT(*) FROM bosses WHERE has_interview=1 AND first_msg_time >= ? AND first_msg_time < ?",
-        (period_start, period_end)).fetchone()[0]
+        "SELECT COUNT(*) FROM bosses WHERE milestone_id = ? AND has_interview=1 "
+        "AND first_msg_time >= ? AND first_msg_time < ?",
+        (milestone_id, period_start, period_end)).fetchone()[0]
     prev_interviews = conn.execute(
-        "SELECT COUNT(*) FROM bosses WHERE has_interview=1 AND first_msg_time >= ? AND first_msg_time < ?",
-        (prev_start, prev_end)).fetchone()[0]
-    top = conn.execute("""SELECT b.name, b.company_name, COUNT(cm.id) as cnt FROM bosses b JOIN chat_messages cm ON cm.encrypt_boss_id=b.encrypt_boss_id WHERE cm.time>=? AND cm.time<? GROUP BY b.encrypt_boss_id ORDER BY cnt DESC LIMIT 5""", (period_start, period_end)).fetchall()
+        "SELECT COUNT(*) FROM bosses WHERE milestone_id = ? AND has_interview=1 "
+        "AND first_msg_time >= ? AND first_msg_time < ?",
+        (milestone_id, prev_start, prev_end)).fetchone()[0]
+    top = conn.execute(
+        """SELECT b.name, b.company_name, COUNT(cm.id) as cnt
+           FROM bosses b
+           JOIN chat_messages cm ON cm.encrypt_boss_id = b.encrypt_boss_id
+                                AND cm.milestone_id = b.milestone_id
+           WHERE b.milestone_id = ? AND cm.time >= ? AND cm.time < ?
+           GROUP BY b.encrypt_boss_id ORDER BY cnt DESC LIMIT 5""",
+        (milestone_id, period_start, period_end)).fetchall()
     conn.close()
 
     t_talked, t_cls = _calc_trend(cur_talked, prev_talked, prev_label)
@@ -155,19 +188,21 @@ def _build_stats(period_start: int, period_end: int, prev_start: int, prev_end: 
 
 
 @router.get("/reports/weekly")
-def generate_weekly():
+def generate_weekly(milestone_id: int = Query(..., description="里程碑 ID")):
     # 统计上周（完整周 Mon-Sun），与上上周对比
+    mname = _milestone_name(milestone_id)
     this_week_start = _start_of_week(0)
     last_week_start = _start_of_week(1)
     last_week_end = this_week_start - 1
     prev2_week_start = _start_of_week(2)
 
-    stats = _build_stats(last_week_start, last_week_end, prev2_week_start, last_week_start - 1, "上周")
-    daily = _daily_data(last_week_start, last_week_end)
+    stats = _build_stats(last_week_start, last_week_end, prev2_week_start, last_week_start - 1,
+                         "上周", milestone_id)
+    daily = _daily_data(last_week_start, last_week_end, milestone_id)
     d1 = datetime.fromtimestamp(last_week_start/1000).strftime('%m/%d')
     d2 = datetime.fromtimestamp(last_week_end/1000).strftime('%m/%d')
 
-    html = _build_html(f"周报 {d1} - {d2}", f"{d1} - {d2}", "上周", stats, daily, stats["top"])
+    html = _build_html(f"周报 {d1} - {d2} · {mname}", f"{d1} - {d2}", "上周", stats, daily, stats["top"])
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
     path = os.path.join(REPORTS_DIR, f"weekly_{ts}.html")
     with open(path, "w") as f:
@@ -176,20 +211,22 @@ def generate_weekly():
 
 
 @router.get("/reports/weekly-current")
-def generate_weekly_current():
+def generate_weekly_current(milestone_id: int = Query(..., description="里程碑 ID")):
     # 统计本周（不完整），与上周对比
+    mname = _milestone_name(milestone_id)
     now = time.localtime()
     end_of_today = int(time.mktime((now.tm_year, now.tm_mon, now.tm_mday, 23, 59, 59, 0, 0, now.tm_isdst))) * 1000
     this_week_start = _start_of_week(0)
     last_week_start = _start_of_week(1)
     last_week_end = this_week_start - 1
 
-    stats = _build_stats(this_week_start, end_of_today, last_week_start, last_week_end, "上周")
-    daily = _daily_data(this_week_start, end_of_today)
+    stats = _build_stats(this_week_start, end_of_today, last_week_start, last_week_end,
+                         "上周", milestone_id)
+    daily = _daily_data(this_week_start, end_of_today, milestone_id)
     d1 = datetime.fromtimestamp(this_week_start/1000).strftime('%m/%d')
     d2 = datetime.fromtimestamp(end_of_today/1000).strftime('%m/%d')
 
-    html = _build_html(f"本周报 {d1} - {d2}", f"{d1} - {d2}", "上周", stats, daily, stats["top"])
+    html = _build_html(f"本周报 {d1} - {d2} · {mname}", f"{d1} - {d2}", "上周", stats, daily, stats["top"])
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
     path = os.path.join(REPORTS_DIR, f"weekly_cur_{ts}.html")
     with open(path, "w") as f:
@@ -198,19 +235,21 @@ def generate_weekly_current():
 
 
 @router.get("/reports/monthly")
-def generate_monthly():
+def generate_monthly(milestone_id: int = Query(..., description="里程碑 ID")):
     # 统计上月（完整月），与上上月对比
+    mname = _milestone_name(milestone_id)
     this_month_start = _start_of_month(0)
     last_month_start = _start_of_month(1)
     last_month_end = this_month_start - 1
     prev2_month_start = _start_of_month(2)
 
-    stats = _build_stats(last_month_start, last_month_end, prev2_month_start, last_month_start - 1, "上月")
-    daily = _daily_data(last_month_start, last_month_end)
+    stats = _build_stats(last_month_start, last_month_end, prev2_month_start, last_month_start - 1,
+                         "上月", milestone_id)
+    daily = _daily_data(last_month_start, last_month_end, milestone_id)
     d1 = datetime.fromtimestamp(last_month_start/1000).strftime('%m/%d')
     d2 = datetime.fromtimestamp(last_month_end/1000).strftime('%m/%d')
 
-    html = _build_html(f"月报 {d1} - {d2}", f"{d1} - {d2}", "上月", stats, daily, stats["top"])
+    html = _build_html(f"月报 {d1} - {d2} · {mname}", f"{d1} - {d2}", "上月", stats, daily, stats["top"])
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
     path = os.path.join(REPORTS_DIR, f"monthly_{ts}.html")
     with open(path, "w") as f:
@@ -219,20 +258,22 @@ def generate_monthly():
 
 
 @router.get("/reports/monthly-current")
-def generate_monthly_current():
+def generate_monthly_current(milestone_id: int = Query(..., description="里程碑 ID")):
     # 统计本月（不完整），与上月对比
+    mname = _milestone_name(milestone_id)
     now = time.localtime()
     end_of_today = int(time.mktime((now.tm_year, now.tm_mon, now.tm_mday, 23, 59, 59, 0, 0, now.tm_isdst))) * 1000
     this_month_start = _start_of_month(0)
     last_month_start = _start_of_month(1)
     last_month_end = this_month_start - 1
 
-    stats = _build_stats(this_month_start, end_of_today, last_month_start, last_month_end, "上月")
-    daily = _daily_data(this_month_start, end_of_today)
+    stats = _build_stats(this_month_start, end_of_today, last_month_start, last_month_end,
+                         "上月", milestone_id)
+    daily = _daily_data(this_month_start, end_of_today, milestone_id)
     d1 = datetime.fromtimestamp(this_month_start/1000).strftime('%m/%d')
     d2 = datetime.fromtimestamp(end_of_today/1000).strftime('%m/%d')
 
-    html = _build_html(f"本月报 {d1} - {d2}", f"{d1} - {d2}", "上月", stats, daily, stats["top"])
+    html = _build_html(f"本月报 {d1} - {d2} · {mname}", f"{d1} - {d2}", "上月", stats, daily, stats["top"])
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
     path = os.path.join(REPORTS_DIR, f"monthly_cur_{ts}.html")
     with open(path, "w") as f:
@@ -241,9 +282,14 @@ def generate_monthly_current():
 
 
 @router.get("/reports/custom")
-def generate_custom(start: str = Query(...), end: str = Query(...)):
+def generate_custom(
+    start: str = Query(...),
+    end: str = Query(...),
+    milestone_id: int = Query(..., description="里程碑 ID"),
+):
     """生成指定日期范围的报告（不做周期对比）
     start/end 格式: YYYY-MM-DD"""
+    mname = _milestone_name(milestone_id)
     fmt = "%Y-%m-%d"
     d_start = datetime.strptime(start, fmt)
     d_end = datetime.strptime(end, fmt)
@@ -254,13 +300,13 @@ def generate_custom(start: str = Query(...), end: str = Query(...)):
     d2 = d_end.strftime('%m/%d')
 
     # 只统计范围内，不对比
-    stats = _build_stats(start_ms, end_ms, 0, 0, "")
+    stats = _build_stats(start_ms, end_ms, 0, 0, "", milestone_id)
     # 清空趋势字段
     for k in ("trend_talked", "trend_msg", "trend_resume", "trend_interview",
               "trend_talked_cls", "trend_msg_cls", "trend_resume_cls", "trend_interview_cls"):
         stats[k] = ""
-    daily = _daily_data(start_ms, end_ms)
-    title = f"报告 {d1} - {d2}"
+    daily = _daily_data(start_ms, end_ms, milestone_id)
+    title = f"报告 {d1} - {d2} · {mname}"
 
     html = _build_html(title, f"{d1} - {d2}", "", stats, daily, stats["top"])
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
