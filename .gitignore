@@ -49,3 +49,6 @@ reports/
 .vite/
 
 .browser-data/
+
+cookies.json
+
